@@ -1,0 +1,16 @@
+// Stub macros when building without Moonbase licensing (dev builds).
+// Included automatically when BANDGATE_NO_MOONBASE is defined.
+#pragma once
+
+#define MOONBASE_DECLARE_LICENSING(company, product, version)
+#define MOONBASE_DECLARE_LICENSING_NAMED(bd, company, product, version)
+#define MOONBASE_DECLARE_LICENSING_USING_JUCE_PROJECTINFO
+#define MOONBASE_PREPARE_TO_PLAY(sr, bs)
+#define MOONBASE_PROCESS(buf)
+#define MOONBASE_DECLARE_MEMBER
+#define MOONBASE_DECLARE_ACTIVATION_UI
+#define MOONBASE_INIT_ACTIVATION_UI(p)
+#define MOONBASE_DECLARE_AND_INIT_ACTIVATION_UI(p)
+#define MOONBASE_DECLARE_AND_INIT_ACTIVATION_UI_SAME_PARENT
+#define MOONBASE_SHOW_ACTIVATION_UI
+#define MOONBASE_RESIZE_ACTIVATION_UI

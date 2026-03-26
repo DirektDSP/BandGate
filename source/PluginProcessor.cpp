@@ -1,0 +1,202 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+//==============================================================================
+PluginProcessor::PluginProcessor()
+     : AudioProcessor (BusesProperties()
+                     #if ! JucePlugin_IsMidiEffect
+                      #if ! JucePlugin_IsSynth
+                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                      #endif
+                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                     #endif
+                       ), apvts(*this, nullptr, "Parameters", createParameterLayout())
+{
+    apvts.state.setProperty(Service::PresetManager::presetNameProperty, "", nullptr);
+    presetManager = std::make_unique<Service::PresetManager>(apvts);
+}
+
+PluginProcessor::~PluginProcessor() noexcept
+{
+}
+
+//==============================================================================
+const juce::String PluginProcessor::getName() const
+{
+    return JucePlugin_Name;
+}
+
+bool PluginProcessor::acceptsMidi() const
+{
+   #if JucePlugin_WantsMidiInput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool PluginProcessor::producesMidi() const
+{
+   #if JucePlugin_ProducesMidiOutput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool PluginProcessor::isMidiEffect() const
+{
+   #if JucePlugin_IsMidiEffect
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+double PluginProcessor::getTailLengthSeconds() const
+{
+    return 0.0;
+}
+
+int PluginProcessor::getNumPrograms()
+{
+    return 1;
+}
+
+int PluginProcessor::getCurrentProgram()
+{
+    return 0;
+}
+
+void PluginProcessor::setCurrentProgram (int index)
+{
+    juce::ignoreUnused (index);
+}
+
+const juce::String PluginProcessor::getProgramName (int index)
+{
+    juce::ignoreUnused (index);
+    return {};
+}
+
+void PluginProcessor::changeProgramName (int index, const juce::String& newName)
+{
+    juce::ignoreUnused (index, newName);
+}
+
+//==============================================================================
+void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = static_cast<uint32>(samplesPerBlock);
+    spec.numChannels = static_cast<uint32>(getTotalNumOutputChannels());
+
+    float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
+    float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float mix = *apvts.getRawParameterValue("MIX");
+    float threshold = *apvts.getRawParameterValue("THRESHOLD");
+    float reduction = *apvts.getRawParameterValue("REDUCTION");
+    float smoothing = *apvts.getRawParameterValue("SMOOTHING");
+    int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
+    int fftOrder = fftChoiceToOrder(fftChoice);
+
+    dspProcessor.prepare(spec, inputGain, outputGain, mix,
+                         threshold, reduction, smoothing, fftOrder);
+
+    setLatencySamples(dspProcessor.getLatencySamples());
+
+    MOONBASE_PREPARE_TO_PLAY (sampleRate, samplesPerBlock);
+}
+
+void PluginProcessor::releaseResources()
+{
+    float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
+    float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float mix = *apvts.getRawParameterValue("MIX");
+
+    dspProcessor.reset(inputGain, outputGain, mix);
+}
+
+bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+   #if JucePlugin_IsMidiEffect
+    juce::ignoreUnused (layouts);
+    return true;
+   #else
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono() &&
+        layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+   #if ! JucePlugin_IsSynth
+    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+        return false;
+   #endif
+    return true;
+   #endif
+}
+
+void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+                                    juce::MidiBuffer& midiMessages)
+{
+    juce::ignoreUnused (midiMessages);
+    juce::ScopedNoDenormals noDenormals;
+
+    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear (i, 0, buffer.getNumSamples());
+
+    float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
+    float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float mix = *apvts.getRawParameterValue("MIX");
+    float threshold = *apvts.getRawParameterValue("THRESHOLD");
+    float reduction = *apvts.getRawParameterValue("REDUCTION");
+    float smoothing = *apvts.getRawParameterValue("SMOOTHING");
+    int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
+    int fftOrder = fftChoiceToOrder(fftChoice);
+
+    dspProcessor.updateParameters(inputGain, outputGain, mix,
+                                  threshold, reduction, smoothing, fftOrder);
+
+    // Update latency if FFT size changed
+    setLatencySamples(dspProcessor.getLatencySamples());
+
+    dspProcessor.processBlock(buffer);
+
+    MOONBASE_PROCESS (buffer);
+}
+
+//==============================================================================
+bool PluginProcessor::hasEditor() const
+{
+    return true;
+}
+
+juce::AudioProcessorEditor* PluginProcessor::createEditor()
+{
+    return new PluginEditor (*this);
+}
+
+//==============================================================================
+void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    copyXmlToBinary(*xml, destData);
+}
+
+void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+
+    if (xmlState.get() != nullptr)
+        if (xmlState->hasTagName(apvts.state.getType()))
+            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new PluginProcessor();
+}

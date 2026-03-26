@@ -1,0 +1,313 @@
+name: Build BandGate
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Parse commit flags
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      run_linux: ${{ steps.flags.outputs.run_linux }}
+      run_windows: ${{ steps.flags.outputs.run_windows }}
+      run_mac: ${{ steps.flags.outputs.run_mac }}
+      no_moonbase: ${{ steps.flags.outputs.no_moonbase }}
+      build_type: ${{ steps.flags.outputs.build_type }}
+      skip: ${{ steps.flags.outputs.skip }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Parse commit flags
+        id: flags
+        shell: bash
+        run: |
+          MSG=$(git log -1 --pretty=%B)
+          echo "Commit message: $MSG"
+
+          # [no-build] — skip everything
+          if echo "$MSG" | grep -qi '\[no-build\]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "run_linux=false" >> "$GITHUB_OUTPUT"
+            echo "run_windows=false" >> "$GITHUB_OUTPUT"
+            echo "run_mac=false" >> "$GITHUB_OUTPUT"
+            echo "no_moonbase=false" >> "$GITHUB_OUTPUT"
+            echo "build_type=Release" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # [no-mb-build] — disable moonbase, use Debug
+          if echo "$MSG" | grep -qi '\[no-mb-build\]'; then
+            echo "no_moonbase=true" >> "$GITHUB_OUTPUT"
+            echo "build_type=Debug" >> "$GITHUB_OUTPUT"
+          else
+            echo "no_moonbase=false" >> "$GITHUB_OUTPUT"
+            echo "build_type=Release" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Platform flags — if any platform flag is present, only run those
+          HAS_PLATFORM=false
+          LINUX=false; WIN=false; MAC=false
+
+          if echo "$MSG" | grep -qi '\[all-build\]'; then
+            LINUX=true; WIN=true; MAC=true; HAS_PLATFORM=true
+          fi
+          if echo "$MSG" | grep -qi '\[linux-build\]'; then
+            LINUX=true; HAS_PLATFORM=true
+          fi
+          if echo "$MSG" | grep -qi '\[win-build\]'; then
+            WIN=true; HAS_PLATFORM=true
+          fi
+          if echo "$MSG" | grep -qi '\[mac-build\]'; then
+            MAC=true; HAS_PLATFORM=true
+          fi
+
+          # Default: linux + windows (no mac yet)
+          if [[ "$HAS_PLATFORM" == "false" ]]; then
+            LINUX=true; WIN=true
+          fi
+
+          echo "run_linux=$LINUX" >> "$GITHUB_OUTPUT"
+          echo "run_windows=$WIN" >> "$GITHUB_OUTPUT"
+          echo "run_mac=$MAC" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Linux build
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Linux
+    needs: changes
+    if: |
+      needs.changes.outputs.skip != 'true' &&
+      needs.changes.outputs.run_linux == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+
+      - name: Recreate moonbase config
+        if: needs.changes.outputs.no_moonbase != 'true'
+        run: |
+          echo "$BANDGATE_CONFIG_B64" | base64 --decode > moonbase_api_config.json
+          cp moonbase_api_config.json assets/moonbase_api_config.json
+        env:
+          BANDGATE_CONFIG_B64: ${{ secrets.BANDGATE_CONFIG_B64 }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev
+
+      - name: Configure
+        run: |
+          CMAKE_FLAGS="-G Ninja -DCMAKE_BUILD_TYPE=${{ needs.changes.outputs.build_type }}"
+          if [[ "${{ needs.changes.outputs.no_moonbase }}" == "true" ]]; then
+            CMAKE_FLAGS="$CMAKE_FLAGS -DBANDGATE_DISABLE_MOONBASE=ON"
+          fi
+          cmake -B build $CMAKE_FLAGS
+
+      - name: Build
+        run: cmake --build build --config ${{ needs.changes.outputs.build_type }} --target BandGate_Standalone BandGate_VST3 BandGate_CLAP
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          base="build/BandGate_artefacts/${{ needs.changes.outputs.build_type }}"
+          if [ -d "${base}/VST3" ]; then cp -r "${base}/VST3/"*.vst3 artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/CLAP" ]; then cp "${base}/CLAP/"*.clap artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/Standalone" ]; then cp "${base}/Standalone/"* artifacts/ 2>/dev/null || true; fi
+          ls -laR artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BandGate-Linux-${{ github.sha }}
+          path: artifacts/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Windows build
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Windows
+    needs: changes
+    if: |
+      needs.changes.outputs.skip != 'true' &&
+      needs.changes.outputs.run_windows == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+
+      - name: Recreate moonbase config
+        if: needs.changes.outputs.no_moonbase != 'true'
+        shell: bash
+        run: |
+          echo "$BANDGATE_CONFIG_B64" | base64 --decode > moonbase_api_config.json
+          cp moonbase_api_config.json assets/moonbase_api_config.json
+        env:
+          BANDGATE_CONFIG_B64: ${{ secrets.BANDGATE_CONFIG_B64 }}
+
+      - name: Configure
+        shell: bash
+        run: |
+          CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=${{ needs.changes.outputs.build_type }}"
+          if [[ "${{ needs.changes.outputs.no_moonbase }}" == "true" ]]; then
+            CMAKE_FLAGS="$CMAKE_FLAGS -DBANDGATE_DISABLE_MOONBASE=ON"
+          fi
+          cmake -B build $CMAKE_FLAGS
+
+      - name: Build
+        run: cmake --build build --config ${{ needs.changes.outputs.build_type }} --parallel 4 --target BandGate_Standalone BandGate_VST3 BandGate_CLAP
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          base="build/BandGate_artefacts/${{ needs.changes.outputs.build_type }}"
+          if [ -d "${base}/VST3" ]; then cp -r "${base}/VST3/"*.vst3 artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/CLAP" ]; then cp "${base}/CLAP/"*.clap artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/Standalone" ]; then cp "${base}/Standalone/"*.exe artifacts/ 2>/dev/null || true; fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BandGate-Windows-${{ github.sha }}
+          path: artifacts/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # macOS build — enabled via [mac-build] or [all-build]
+  # ---------------------------------------------------------------------------
+  build-mac:
+    name: macOS
+    needs: changes
+    if: |
+      needs.changes.outputs.skip != 'true' &&
+      needs.changes.outputs.run_mac == 'true'
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+
+      - name: Install dependencies
+        run: brew install ninja
+
+      - name: Recreate moonbase config
+        if: needs.changes.outputs.no_moonbase != 'true'
+        run: |
+          echo "$BANDGATE_CONFIG_B64" | base64 --decode > moonbase_api_config.json
+          cp moonbase_api_config.json assets/moonbase_api_config.json
+        env:
+          BANDGATE_CONFIG_B64: ${{ secrets.BANDGATE_CONFIG_B64 }}
+
+      - name: Configure
+        run: |
+          CMAKE_FLAGS="-G Ninja -DCMAKE_BUILD_TYPE=${{ needs.changes.outputs.build_type }} -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          if [[ "${{ needs.changes.outputs.no_moonbase }}" == "true" ]]; then
+            CMAKE_FLAGS="$CMAKE_FLAGS -DBANDGATE_DISABLE_MOONBASE=ON"
+          fi
+          cmake -B build $CMAKE_FLAGS
+
+      - name: Build
+        run: cmake --build build --config ${{ needs.changes.outputs.build_type }} --target BandGate_Standalone BandGate_VST3 BandGate_CLAP BandGate_AU
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          base="build/BandGate_artefacts/${{ needs.changes.outputs.build_type }}"
+          if [ -d "${base}/VST3" ]; then cp -r "${base}/VST3/"*.vst3 artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/CLAP" ]; then cp "${base}/CLAP/"*.clap artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/AU" ]; then cp -r "${base}/AU/"*.component artifacts/ 2>/dev/null || true; fi
+          if [ -d "${base}/Standalone" ]; then cp -r "${base}/Standalone/"*.app artifacts/ 2>/dev/null || true; fi
+          ls -laR artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BandGate-macOS-${{ github.sha }}
+          path: artifacts/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Windows installer — runs after Windows build
+  # ---------------------------------------------------------------------------
+  installer-windows:
+    name: Windows Installer
+    needs: [changes, build-windows]
+    if: |
+      needs.changes.outputs.skip != 'true' &&
+      needs.changes.outputs.run_windows == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (for packaging scripts)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packaging
+            VERSION
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "BandGate-Windows-*"
+          path: artifacts/windows
+          merge-multiple: true
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Install NSIS
+        run: choco install nsis --yes
+
+      - name: Build NSIS installer
+        uses: joncloud/makensis-action@v4
+        with:
+          script-file: packaging/installer.nsi
+          arguments: >-
+            /DVERSION=${{ steps.version.outputs.version }}
+            /DARTIFACTS_DIR=..\artifacts\windows
+            /DOUTDIR=..\artifacts
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BandGate-Windows-Installer-${{ github.sha }}
+          path: artifacts/DirektDSP-BandGate-*-Windows.exe
+          retention-days: 30
