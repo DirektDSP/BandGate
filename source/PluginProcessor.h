@@ -6,9 +6,8 @@
     #include "MoonbaseStubs.h"
 #else
     #include "moonbase_JUCEClient/moonbase_JUCEClient.h"
+    #include "BinaryData.h"
 #endif
-
-#include "BinaryData.h"
 #include "Service/PresetManager.h"
 #include "DSP/BandGateDSP.h"
 
