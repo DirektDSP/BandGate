@@ -3,7 +3,7 @@
 #pragma once
 
 #define MOONBASE_DECLARE_LICENSING(company, product, version)
-#define MOONBASE_DECLARE_LICENSING_NAMED(bd, company, product, version)
+
 #define MOONBASE_DECLARE_LICENSING_USING_JUCE_PROJECTINFO
 #define MOONBASE_PREPARE_TO_PLAY(sr, bs)
 #define MOONBASE_PROCESS(buf)

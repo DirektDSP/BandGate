@@ -21,7 +21,7 @@ public:
     PluginProcessor();
     ~PluginProcessor() noexcept override;
 
-    MOONBASE_DECLARE_LICENSING_NAMED(BinaryData, "DirektDSP", "bandgate", VERSION)
+    MOONBASE_DECLARE_LICENSING("DirektDSP", "bandgate", VERSION)
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
