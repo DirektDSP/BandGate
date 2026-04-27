@@ -4,7 +4,7 @@
 namespace Service
 {
     const File PresetManager::defaultDirectory {
-        File::getSpecialLocation (File::SpecialLocationType::commonDocumentsDirectory)
+        File::getSpecialLocation (File::SpecialLocationType::userDocumentsDirectory)
             .getChildFile ("DirektDSP")
             .getChildFile (JucePlugin_Name)
             .getChildFile ("Presets")
@@ -21,10 +21,7 @@ namespace Service
         {
             const auto result = defaultDirectory.createDirectory();
             if (result.failed())
-            {
                 DBG ("Could not create preset directory: " + result.getErrorMessage());
-                jassertfalse;
-            }
         }
 
         valueTreeState.state.addListener (this);
@@ -374,6 +371,7 @@ namespace Service
                 meta.category = defaultCategory;
                 meta.dateCreated = tree.getProperty ("dateCreated", "").toString();
                 meta.dateModified = tree.getProperty ("dateModified", "").toString();
+                meta.tags.addTokens (tree.getProperty ("tags").toString().trim(), ",", "\"");
                 result.add (meta);
             }
         }
@@ -415,6 +413,7 @@ namespace Service
                 meta.category = category;
                 meta.dateCreated = tree.getProperty ("dateCreated", "").toString();
                 meta.dateModified = tree.getProperty ("dateModified", "").toString();
+                meta.tags.addTokens (tree.getProperty ("tags").toString().trim(), ",", "\"");
                 result.add (meta);
             }
         }

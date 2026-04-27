@@ -12,6 +12,7 @@ namespace Service
         String category;
         String dateCreated;
         String dateModified;
+        StringArray tags;
         String getFullPath() const { return category.isEmpty() ? name : category + "/" + name; }
     };
 
