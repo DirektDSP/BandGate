@@ -3,6 +3,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
+#include <utility>
 #include <vector>
 
 namespace
@@ -10,7 +12,7 @@ namespace
     constexpr float kFreqPlotMinHz = 20.f;
     constexpr float kDbFloor = -100.f;
     constexpr float kDbCeil = 6.f;
-    constexpr float kHitPx = 7.f;
+    constexpr float kHitPx = 8.f;
 
     float logNormX (float hz, float fMin, float fMax, float x0, float width)
     {
@@ -52,6 +54,91 @@ namespace
         };
         return juce::Colour (cols[(size_t) bandIndex % (sizeof (cols) / sizeof (cols[0]))]);
     }
+
+    void copySortedCrossovers (juce::AudioProcessorValueTreeState& apvts, int nx,
+                               std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross)
+    {
+        for (int i = 0; i < nx; ++i)
+            cross[(size_t) i] = apvts.getRawParameterValue ("CROSSOVER_" + juce::String (i))->load();
+        for (int a = 0; a < nx - 1; ++a)
+            for (int b = 0; b < nx - 1 - a; ++b)
+                if (cross[(size_t) b] > cross[(size_t) b + 1])
+                    std::swap (cross[(size_t) b], cross[(size_t) b + 1]);
+    }
+
+    int bandIndexForBinCenterHz (float fc, float fMax, const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross, int nb)
+    {
+        fc = juce::jlimit (kFreqPlotMinHz, fMax, fc);
+        for (int b = 0; b < nb - 1; ++b)
+            if (fc < cross[(size_t) b])
+                return b;
+        return nb - 1;
+    }
+
+    void bandXExtents (int band, float fMax, const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross, int nb,
+                       const juce::Rectangle<float>& plot, float& xL, float& xR)
+    {
+        const float fLo = (band == 0) ? kFreqPlotMinHz : cross[(size_t) (band - 1)];
+        const float fHi = (band == nb - 1) ? fMax : cross[(size_t) band];
+        xL = logNormX (fLo, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
+        xR = logNormX (fHi, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
+        if (xR < xL)
+            std::swap (xL, xR);
+    }
+
+    struct SpectrumLayout
+    {
+        juce::Rectangle<float> plot, dbAxis, header, freqStrip;
+    };
+
+    SpectrumLayout makeLayout (juce::Rectangle<float> bounds)
+    {
+        auto outer = bounds.reduced (8.f, 8.f);
+        SpectrumLayout L {};
+        L.dbAxis = outer.removeFromLeft (36.f);
+        L.header = outer.removeFromTop (16.f);
+        L.freqStrip = outer.removeFromBottom (18.f);
+        L.plot = outer;
+        return L;
+    }
+
+    void paintBandLanes (juce::Graphics& g, const juce::Rectangle<float>& plot, float fMax, int nb,
+                         const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross)
+    {
+        const int nx = nb - 1;
+        for (int band = 0; band < nb; ++band)
+        {
+            float xL = 0, xR = 0;
+            bandXExtents (band, fMax, cross, nb, plot, xL, xR);
+            g.setColour (bandColour (band).withAlpha (0.11f));
+            g.fillRect (xL, plot.getY(), juce::jmax (xR - xL, 1.f), plot.getHeight());
+        }
+
+        g.setColour (juce::Colour (0xfff0f2f5).withAlpha (0.72f));
+        for (int i = 0; i < nx; ++i)
+        {
+            const float xc = logNormX (cross[(size_t) i], kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
+            g.fillRect (std::floor (xc) - 1.f, plot.getY(), 3.f, plot.getHeight());
+        }
+    }
+
+    void paintBandHeaders (juce::Graphics& g, const SpectrumLayout& L, float fMax, int nb,
+                           const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross)
+    {
+        g.setFont (12.f);
+        for (int band = 0; band < nb; ++band)
+        {
+            float xL = 0, xR = 0;
+            bandXExtents (band, fMax, cross, nb, L.plot, xL, xR);
+            const float cx = 0.5f * (xL + xR);
+            const int rw = (int) juce::jmax (28.f, std::floor (0.5f * (xR - xL)));
+            auto r = juce::Rectangle<int> ((int) std::floor (cx - 0.5f * (float) rw), (int) L.header.getY() + 1, rw, (int) L.header.getHeight() - 2);
+            const juce::String name = (xR - xL) < 52.f ? ("B" + juce::String (band + 1))
+                                                       : ("Band " + juce::String (band + 1));
+            g.setColour (bandColour (band).brighter (0.15f));
+            g.drawText (name, r, juce::Justification::centred, false);
+        }
+    }
 } // namespace
 
 SpectrumVisualizer::SpectrumVisualizer (PluginProcessor& p)
@@ -73,63 +160,19 @@ void SpectrumVisualizer::timerCallback()
 
 juce::Rectangle<float> SpectrumVisualizer::getPlotArea (juce::Rectangle<float> bounds) const
 {
-    auto plot = bounds.reduced (8.f, 8.f);
-    plot.removeFromBottom (16.f);
-    plot.removeFromTop (2.f);
-    return plot;
-}
-
-void SpectrumVisualizer::paintBandOverlapBars (juce::Graphics& g, juce::Rectangle<float> plot,
-                                               double sampleRate, float nyquist) const
-{
-    const float fMax = juce::jmax (kFreqPlotMinHz * 2.f, nyquist);
-    const int nb = getNumBands (processor.getApvts());
-    const int nx = nb - 1;
-
-    std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
-    for (int i = 0; i < nx; ++i)
-        cross[(size_t) i] = processor.getApvts().getRawParameterValue ("CROSSOVER_" + juce::String (i))->load();
-
-    for (int a = 0; a < nx - 1; ++a)
-        for (int b = 0; b < nx - 1 - a; ++b)
-            if (cross[(size_t) b] > cross[(size_t) b + 1])
-                std::swap (cross[(size_t) b], cross[(size_t) b + 1]);
-
-    const float stripH = 2.8f;
-    const float stripY0 = plot.getBottom() - stripH * (float) nb - 4.f;
-
-    for (int band = 0; band < nb; ++band)
-    {
-        const float fLo = (band == 0) ? kFreqPlotMinHz : cross[(size_t) (band - 1)];
-        const float fHi = (band == nb - 1) ? fMax : cross[(size_t) band];
-        const float x0 = logNormX (fLo, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
-        const float x1 = logNormX (fHi, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
-        g.setColour (bandColour (band).withAlpha (0.55f));
-        g.fillRect (juce::Rectangle<float> (juce::jmin (x0, x1), stripY0 + (float) band * stripH,
-                                              juce::jmax (4.f, std::abs (x1 - x0)), stripH));
-    }
-
-    // LR transition overlap: vertical shaded column (read as overlap region on log axis)
-    for (int i = 0; i < nx; ++i)
-    {
-        const float fc = cross[(size_t) i];
-        const float fLo = fc * 0.75f;
-        const float fHi = fc * 1.333f;
-        const float x0 = logNormX (fLo, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
-        const float x1 = logNormX (fHi, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
-        g.setColour (juce::Colours::white.withAlpha (0.07f));
-        g.fillRect (juce::Rectangle<float> (juce::jmin (x0, x1), plot.getY(),
-                                              juce::jmax (3.f, std::abs (x1 - x0)), plot.getHeight()));
-    }
+    return makeLayout (bounds).plot;
 }
 
 void SpectrumVisualizer::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
-    g.setColour (juce::Colour (0xff1a1a1e));
+    g.setColour (juce::Colour (0xff1c1f24));
     g.fillRoundedRectangle (bounds, 5.0f);
-    g.setColour (juce::Colour (0xff3a3a42));
+    g.setColour (juce::Colour (0xff3a3f44).withAlpha (0.7f));
     g.drawRoundedRectangle (bounds, 5.0f, 1.0f);
+
+    const auto L = makeLayout (bounds);
+    const auto& plot = L.plot;
 
     std::vector<float> magDb, gain;
     int fftSize = 0;
@@ -139,33 +182,30 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
     const float nyquist = (float) (sampleRate * 0.5);
     const float fMax = juce::jmax (kFreqPlotMinHz * 2.f, nyquist);
 
-    auto plot = getPlotArea (bounds);
-    const auto tickArea = juce::Rectangle<float> (bounds.getX() + 8.f, plot.getBottom(), bounds.getWidth() - 16.f, 16.f);
+    auto& apvts = processor.getApvts();
+    const int nb = getNumBands (apvts);
+    const int nx = nb - 1;
+    std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
+    copySortedCrossovers (apvts, nx, cross);
 
-    g.setColour (juce::Colour (0xff2e2e34));
+    paintBandLanes (g, plot, fMax, nb, cross);
+    paintBandHeaders (g, L, fMax, nb, cross);
+
+    g.setColour (juce::Colour (0xff3d4249).withAlpha (0.85f));
     for (float dbMark : { -80.f, -60.f, -40.f, -20.f, 0.f })
     {
         const float y = dbToY (dbMark, plot);
         g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
     }
 
-    g.setColour (juce::Colour (0xff55555e));
-    g.setFont (11.f);
-    for (float fMark : { 100.f, 500.f, 1000.f, 5000.f, 10000.f })
+    g.setColour (juce::Colour (0xff8b919a).withAlpha (0.9f));
+    g.setFont (10.5f);
+    for (float dbMark : { -80.f, -60.f, -40.f, -20.f, 0.f })
     {
-        if (fMark > fMax * 1.01f)
-            continue;
-
-        const float x = logNormX (fMark, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
-        g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
-
-        juce::String label = fMark >= 1000.f ? juce::String (fMark / 1000.f, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " k"
-                                            : juce::String (juce::roundToInt (fMark));
-        g.drawText (label, juce::Rectangle<int> ((int) x - 22, (int) tickArea.getY(), 44, (int) tickArea.getHeight()),
-                    juce::Justification::centred, false);
+        const float y = dbToY (dbMark, plot);
+        auto tr = juce::Rectangle<int> ((int) L.dbAxis.getX(), (int) (y - 7.f), (int) L.dbAxis.getWidth() - 2, 14);
+        g.drawText (juce::String (juce::roundToInt (dbMark)), tr, juce::Justification::centredRight, false);
     }
-
-    paintBandOverlapBars (g, plot, sampleRate, nyquist);
 
     if (fftSize <= 0 || magDb.empty())
     {
@@ -175,7 +215,6 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
     }
 
     const int numBins = (int) magDb.size();
-    const int nb = getNumBands (processor.getApvts());
 
     for (int bin = 1; bin < numBins; ++bin)
     {
@@ -183,6 +222,9 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
         const float f1 = (float) (bin + 1) * (float) sampleRate / (float) fftSize;
         if (f1 < kFreqPlotMinHz)
             continue;
+
+        const float fc = 0.5f * (f0 + f1);
+        const int bandIdx = bandIndexForBinCenterHz (fc, fMax, cross, nb);
 
         const float x0 = logNormX (juce::jmax (f0, kFreqPlotMinHz), kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
         const float x1 = logNormX (f1, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
@@ -195,59 +237,64 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
         const float yBottom = plot.getBottom();
         const float barH = juce::jmax (yBottom - yTop, 1.f);
 
-        float nearestThr = -60.f;
-        float minDist = 1.0e9f;
-        for (int b = 0; b < nb; ++b)
-        {
-            const juce::String pfx = "BAND" + juce::String (b) + "_";
-            const float tDb = processor.getApvts().getRawParameterValue (pfx + "THRESHOLD")->load();
-            const float d = std::abs (mDb - tDb);
-            if (d < minDist)
-            {
-                minDist = d;
-                nearestThr = tDb;
-            }
-        }
-
-        const bool gated = (gv < 0.98f) || (mDb < nearestThr - 0.25f);
-        const juce::Colour cold (0xff4ecdc4);
-        const juce::Colour hot (0xffff6b6b);
-        const juce::Colour c = gated ? hot : cold;
-
-        g.setColour (c.withAlpha (gated ? 0.92f : 0.55f));
+        const auto base = bandColour (bandIdx);
+        const float atten = juce::jlimit (0.f, 1.f, 1.f - gv);
+        const juce::Colour fill = base.interpolatedWith (juce::Colour (0xffff7040), atten * 0.85f);
+        g.setColour (fill.withAlpha (juce::jmap (atten, 0.f, 1.f, 0.42f, 0.78f)));
         g.fillRect (barLeft, yTop, barW, barH);
     }
 
-    // Per-band threshold lines + handles
     for (int b = 0; b < nb; ++b)
     {
         const juce::String pfx = "BAND" + juce::String (b) + "_";
-        const float thrDb = processor.getApvts().getRawParameterValue (pfx + "THRESHOLD")->load();
+        const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
         const float yThr = dbToY (thrDb, plot);
+        float xL = 0, xR = 0;
+        bandXExtents (b, fMax, cross, nb, plot, xL, xR);
         const auto col = bandColour (b);
-        g.setColour (col.withAlpha (0.9f));
-        g.drawLine (plot.getX(), yThr, plot.getRight(), yThr, 1.2f);
-        const float hx = plot.getRight() - 6.f;
-        g.fillEllipse (hx - 5.f, yThr - 5.f, 10.f, 10.f);
+        g.setColour (col.brighter (0.1f));
+        g.drawLine (xL, yThr, xR, yThr, 2.2f);
+        const float hx = juce::jlimit (xL + 6.f, xR - 6.f, xR - 5.f);
+        g.setColour (col.brighter (0.25f));
+        g.fillRoundedRectangle (hx - 5.f, yThr - 5.f, 10.f, 10.f, 3.f);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.drawRoundedRectangle (hx - 5.f, yThr - 5.f, 10.f, 10.f, 3.f, 1.f);
     }
 
-    // Crossover handles (top of plot)
-    const int nx = nb - 1;
-    std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
-    for (int i = 0; i < nx; ++i)
-        cross[(size_t) i] = processor.getApvts().getRawParameterValue ("CROSSOVER_" + juce::String (i))->load();
-    for (int a = 0; a < nx - 1; ++a)
-        for (int b = 0; b < nx - 1 - a; ++b)
-            if (cross[(size_t) b] > cross[(size_t) b + 1])
-                std::swap (cross[(size_t) b], cross[(size_t) b + 1]);
+    g.setColour (juce::Colour (0xff6a7078));
+    g.setFont (11.f);
+    for (float fMark : { 100.f, 500.f, 1000.f, 5000.f, 10000.f })
+    {
+        if (fMark > fMax * 1.01f)
+            continue;
+
+        const float x = logNormX (fMark, kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
+        g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
+
+        juce::String label = fMark >= 1000.f ? juce::String (fMark / 1000.f, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " k"
+                                            : juce::String (juce::roundToInt (fMark));
+        g.setColour (juce::Colour (0xffb0b6bf));
+        g.drawText (label,
+                    juce::Rectangle<int> ((int) x - 22, (int) L.freqStrip.getY() + 1, 44, (int) L.freqStrip.getHeight() - 2),
+                    juce::Justification::centred, false);
+    }
 
     for (int i = 0; i < nx; ++i)
     {
         const float xc = logNormX (cross[(size_t) i], kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
         juce::Path tri;
-        tri.addTriangle (xc, plot.getY() + 2.f, xc - 6.f, plot.getY() + 14.f, xc + 6.f, plot.getY() + 14.f);
-        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        tri.addTriangle (xc, plot.getY() + 3.f, xc - 7.f, plot.getY() + 15.f, xc + 7.f, plot.getY() + 15.f);
+        g.setColour (juce::Colour (0xfff5f6f8).withAlpha (0.92f));
         g.fillPath (tri);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.strokePath (tri, juce::PathStrokeType (1.f));
+
+        const juce::String hzLabel = cross[(size_t) i] >= 1000.f
+                                         ? juce::String (cross[(size_t) i] / 1000.f, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " kHz"
+                                         : juce::String (juce::roundToInt (cross[(size_t) i])) + " Hz";
+        g.setFont (10.f);
+        g.setColour (juce::Colour (0xffcfd4da));
+        g.drawText (hzLabel, juce::Rectangle<int> ((int) xc - 40, (int) plot.getY() + 16, 80, 14), juce::Justification::centred, false);
     }
 }
 
@@ -260,16 +307,12 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
     const float mx = (float) e.position.getX();
     const float my = (float) e.position.getY();
 
-    const int nb = getNumBands (processor.getApvts());
+    auto& apvts = processor.getApvts();
+    const int nb = getNumBands (apvts);
     const int nx = nb - 1;
 
     std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
-    for (int i = 0; i < nx; ++i)
-        cross[(size_t) i] = processor.getApvts().getRawParameterValue ("CROSSOVER_" + juce::String (i))->load();
-    for (int a = 0; a < nx - 1; ++a)
-        for (int b = 0; b < nx - 1 - a; ++b)
-            if (cross[(size_t) b] > cross[(size_t) b + 1])
-                std::swap (cross[(size_t) b], cross[(size_t) b + 1]);
+    copySortedCrossovers (apvts, nx, cross);
 
     for (int i = 0; i < nx; ++i)
     {
@@ -278,7 +321,7 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
         {
             dragKind = DragKind::crossover;
             dragCrossoverIndex = i;
-            dragParam = dynamic_cast<juce::RangedAudioParameter*> (processor.getApvts().getParameter ("CROSSOVER_" + juce::String (i)));
+            dragParam = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter ("CROSSOVER_" + juce::String (i)));
             if (dragParam != nullptr)
                 dragParam->beginChangeGesture();
             return;
@@ -289,11 +332,16 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
     float bestDy = 1.0e9f;
     for (int b = 0; b < nb; ++b)
     {
+        float xL = 0, xR = 0;
+        bandXExtents (b, fMax, cross, nb, plot, xL, xR);
+        if (mx < xL || mx > xR)
+            continue;
+
         const juce::String pfx = "BAND" + juce::String (b) + "_";
-        const float thrDb = processor.getApvts().getRawParameterValue (pfx + "THRESHOLD")->load();
+        const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
         const float yThr = dbToY (thrDb, plot);
         const float dy = std::abs (my - yThr);
-        if (dy < bestDy && mx >= plot.getX() && mx <= plot.getRight())
+        if (dy < bestDy)
         {
             bestDy = dy;
             bestBand = b;
@@ -305,7 +353,7 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
         dragKind = DragKind::threshold;
         dragThresholdBand = bestBand;
         dragParam = dynamic_cast<juce::RangedAudioParameter*> (
-            processor.getApvts().getParameter ("BAND" + juce::String (bestBand) + "_THRESHOLD"));
+            apvts.getParameter ("BAND" + juce::String (bestBand) + "_THRESHOLD"));
         if (dragParam != nullptr)
             dragParam->beginChangeGesture();
     }
@@ -346,16 +394,12 @@ void SpectrumVisualizer::mouseMove (const juce::MouseEvent& e)
     const float mx = (float) e.position.getX();
     const float my = (float) e.position.getY();
 
-    const int nb = getNumBands (processor.getApvts());
+    auto& apvts = processor.getApvts();
+    const int nb = getNumBands (apvts);
     const int nx = nb - 1;
 
     std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
-    for (int i = 0; i < nx; ++i)
-        cross[(size_t) i] = processor.getApvts().getRawParameterValue ("CROSSOVER_" + juce::String (i))->load();
-    for (int a = 0; a < nx - 1; ++a)
-        for (int b = 0; b < nx - 1 - a; ++b)
-            if (cross[(size_t) b] > cross[(size_t) b + 1])
-                std::swap (cross[(size_t) b], cross[(size_t) b + 1]);
+    copySortedCrossovers (apvts, nx, cross);
 
     for (int i = 0; i < nx; ++i)
     {
@@ -369,10 +413,15 @@ void SpectrumVisualizer::mouseMove (const juce::MouseEvent& e)
 
     for (int b = 0; b < nb; ++b)
     {
+        float xL = 0, xR = 0;
+        bandXExtents (b, fMax, cross, nb, plot, xL, xR);
+        if (mx < xL || mx > xR)
+            continue;
+
         const juce::String pfx = "BAND" + juce::String (b) + "_";
-        const float thrDb = processor.getApvts().getRawParameterValue (pfx + "THRESHOLD")->load();
+        const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
         const float yThr = dbToY (thrDb, plot);
-        if (std::abs (my - yThr) <= kHitPx && mx >= plot.getX() && mx <= plot.getRight())
+        if (std::abs (my - yThr) <= kHitPx)
         {
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
             return;

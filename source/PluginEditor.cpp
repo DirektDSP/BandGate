@@ -7,6 +7,21 @@ namespace
         const int c = static_cast<int> (*apvts.getRawParameterValue ("NUM_BANDS"));
         return juce::jlimit (2, PluginProcessor::kMaxBands, c + 2);
     }
+
+    // Single source of truth for layout — keeps paint() and resized() aligned and avoids overflow.
+    struct Layout
+    {
+        static constexpr int margin = 12;
+        static constexpr int gap = 8;
+        static constexpr int topKnobsH = 92;
+        static constexpr int spectrumH = 200;
+        static constexpr int bandBarH = 40;
+        static constexpr int xoverH = 56;
+        static constexpr int gateH = 112;
+
+        static constexpr int defaultWidth = 920;
+        static constexpr int defaultHeight = 620;
+    };
 } // namespace
 
 //==============================================================================
@@ -43,26 +58,23 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (fftSizeCB);
     addAndMakeVisible (fftSizeLabel);
     fftSizeCB.addItemList (juce::StringArray { "256", "512", "1024", "2048", "4096" }, 1);
-    fftSizeLabel.setText ("FFT Size", juce::dontSendNotification);
+    fftSizeLabel.setText ("FFT", juce::dontSendNotification);
     fftSizeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    fftSizeLabel.setJustificationType (juce::Justification::centred);
-    fftSizeLabel.attachToComponent (&fftSizeCB, false);
+    fftSizeLabel.setJustificationType (juce::Justification::centredRight);
 
     addAndMakeVisible (numBandsCB);
     addAndMakeVisible (numBandsLabel);
     numBandsCB.addItemList (juce::StringArray { "2", "3", "4", "5", "6" }, 1);
     numBandsLabel.setText ("Bands", juce::dontSendNotification);
     numBandsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    numBandsLabel.setJustificationType (juce::Justification::centred);
-    numBandsLabel.attachToComponent (&numBandsCB, false);
+    numBandsLabel.setJustificationType (juce::Justification::centredRight);
 
     addAndMakeVisible (activeBandCB);
     addAndMakeVisible (activeBandLabel);
     activeBandCB.addItemList (juce::StringArray { "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6" }, 1);
     activeBandLabel.setText ("Edit band", juce::dontSendNotification);
     activeBandLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    activeBandLabel.setJustificationType (juce::Justification::centred);
-    activeBandLabel.attachToComponent (&activeBandCB, false);
+    activeBandLabel.setJustificationType (juce::Justification::centredRight);
 
     for (int i = 0; i < 5; ++i)
     {
@@ -93,7 +105,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     addAndMakeVisible (spectrumViz);
 
-    setSize (880, 560);
+    setSize (Layout::defaultWidth, Layout::defaultHeight);
+    setResizeLimits (760, 540, 1600, 900);
 }
 
 PluginEditor::~PluginEditor()
@@ -160,60 +173,112 @@ void PluginEditor::updateCrossoverSliderVisibility()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour::fromRGB (30, 30, 30));
+    using namespace juce;
 
-    g.setColour (juce::Colour::fromRGB (60, 60, 60));
-    auto area = getLocalBounds().reduced (10);
-    g.drawHorizontalLine (area.getY() + 90, (float) area.getX(), (float) area.getRight());
+    const auto bg = Colour (0xff1a1c1e);
+    const auto panel = Colour (0xff232629);
+    const auto rule = Colour (0xff3a3f44);
+
+    g.fillAll (bg);
+
+    auto outer = getLocalBounds().toFloat().reduced ((float) Layout::margin);
+
+    g.setColour (panel);
+    g.fillRoundedRectangle (outer, 6.0f);
+
+    g.setColour (rule.withAlpha (0.55f));
+    g.drawRoundedRectangle (outer, 6.0f, 1.0f);
+
+    // Hairlines centered in the gaps between sections (matches resized() strip order).
+    const float inset = 10.0f;
+    const float xL = outer.getX() + inset;
+    const float xR = outer.getRight() - inset;
+    const float g2 = (float) Layout::gap * 0.5f;
+
+    float y = outer.getY();
+    auto hairlineInNextGap = [&] (int blockH) {
+        y += (float) blockH + g2;
+        g.setColour (rule.withAlpha (0.35f));
+        g.drawHorizontalLine (roundToInt (y), xL, xR);
+        y += g2;
+    };
+
+    hairlineInNextGap (Layout::topKnobsH);
+    hairlineInNextGap (Layout::spectrumH);
+    hairlineInNextGap (Layout::bandBarH);
+    hairlineInNextGap (Layout::xoverH);
 }
 
 void PluginEditor::resized()
 {
-    auto area = getLocalBounds().reduced (10);
+    auto area = getLocalBounds().reduced (Layout::margin);
 
     #ifdef JUCE_DEBUG
-        inspectButton.setBounds (area.removeFromBottom (30).withSizeKeepingCentre (100, 25));
+        constexpr int inspectH = 28;
+        inspectButton.setBounds (area.removeFromBottom (inspectH)
+                                      .withSizeKeepingCentre (juce::jmin (140, area.getWidth() - 8),
+                                                              juce::jmax (22, inspectH - 4)));
+        if (area.getHeight() > 0)
+            area.removeFromBottom (Layout::gap);
     #endif
 
-    auto topRow = area.removeFromTop (80);
-    const int topKnobWidth = topRow.getWidth() / 3;
+    auto topRow = area.removeFromTop (Layout::topKnobsH);
+    const int pad = 8;
+    const int topKnobWidth = juce::jmax (120, (topRow.getWidth() - 2 * pad) / 3);
 
-    inputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (5));
-    outputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (5));
-    mixSlider.setBounds (topRow.reduced (5));
+    inputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (pad, 6));
+    outputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (pad, 6));
+    mixSlider.setBounds (topRow.reduced (pad, 6));
 
-    area.removeFromTop (10);
+    area.removeFromTop (Layout::gap);
 
-    spectrumViz.setBounds (area.removeFromTop (220));
+    spectrumViz.setBounds (area.removeFromTop (Layout::spectrumH));
 
-    area.removeFromTop (10);
+    area.removeFromTop (Layout::gap);
 
-    auto bandRow = area.removeFromTop (32);
-    numBandsCB.setBounds (bandRow.removeFromLeft (100).reduced (0, 4));
-    bandRow.removeFromLeft (12);
-    activeBandCB.setBounds (bandRow.removeFromLeft (120).reduced (0, 4));
+    {
+        auto bandRow = area.removeFromTop (Layout::bandBarH);
+        const int lab = 52;
+        const int comboFixed = 64;
+        const int comboWide = 108;
 
-    area.removeFromTop (8);
+        auto b1 = bandRow.removeFromLeft (lab + comboFixed);
+        numBandsLabel.setBounds (b1.removeFromLeft (lab));
+        numBandsCB.setBounds (b1.reduced (0, 6));
 
-    auto xRow = area.removeFromTop (56);
-    const int xw = juce::jmax (44, xRow.getWidth() / 5);
-    for (int i = 0; i < 5; ++i)
-        crossoverSliders[(size_t) i].setBounds (xRow.removeFromLeft (xw).reduced (3, 0));
+        bandRow.removeFromLeft (Layout::gap);
 
-    area.removeFromTop (10);
+        auto b2 = bandRow.removeFromLeft (lab + comboWide);
+        activeBandLabel.setBounds (b2.removeFromLeft (lab));
+        activeBandCB.setBounds (b2.reduced (0, 6));
 
-    auto gateRow = area.removeFromTop (110);
-    const int gateKnobWidth = gateRow.getWidth() / 3;
+        bandRow.removeFromLeft (Layout::gap);
 
-    thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10));
-    reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10));
-    smoothingSlider.setBounds (gateRow.reduced (10));
+        auto fftBlock = bandRow.removeFromRight (lab + comboFixed);
+        fftSizeLabel.setBounds (fftBlock.removeFromLeft (lab));
+        fftSizeCB.setBounds (fftBlock.reduced (0, 6));
+    }
 
-    area.removeFromTop (8);
+    area.removeFromTop (Layout::gap);
 
-    auto bottomRow = area;
-    const int cbWidth = 120;
-    fftSizeCB.setBounds (bottomRow.withSizeKeepingCentre (cbWidth, 25));
+    auto xRow = area.removeFromTop (Layout::xoverH);
+    const int nx = 5;
+    const int xw = juce::jmax (56, (xRow.getWidth() - (nx - 1) * 4) / nx);
+    for (int i = 0; i < nx; ++i)
+    {
+        if (i > 0)
+            xRow.removeFromLeft (4);
+        crossoverSliders[(size_t) i].setBounds (xRow.removeFromLeft (xw).reduced (2, 4));
+    }
+
+    area.removeFromTop (Layout::gap);
+
+    auto gateRow = area.removeFromTop (Layout::gateH);
+    const int gateKnobWidth = juce::jmax (130, gateRow.getWidth() / 3);
+
+    thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
+    reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
+    smoothingSlider.setBounds (gateRow.reduced (10, 8));
 
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (activationUI)

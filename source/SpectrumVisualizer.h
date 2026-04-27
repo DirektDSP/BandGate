@@ -27,8 +27,6 @@ private:
     void timerCallback() override;
 
     juce::Rectangle<float> getPlotArea (juce::Rectangle<float> bounds) const;
-    void paintBandOverlapBars (juce::Graphics& g, juce::Rectangle<float> plot,
-                               double sampleRate, float nyquist) const;
 
     PluginProcessor& processor;
     juce::RangedAudioParameter* dragParam = nullptr;
