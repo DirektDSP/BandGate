@@ -67,10 +67,13 @@ function(bandgate_setup_moonbase)
     # IMPORTANT: Add the build dir BEFORE any other include paths
     # so that headers from the build copy are found first (not the source module).
     target_include_directories(${MB_TARGET} BEFORE PRIVATE "${MB_DEST_DIR}")
+    # <moonbase_JUCEClient/...> includes must resolve to the *build* copy (PreBuild), not
+    # modules/moonbase_JUCEClient, or MoonbaseBinary.h is parsed twice and const defs ODR-fail.
+    target_include_directories(${MB_TARGET} BEFORE PRIVATE "${CMAKE_BINARY_DIR}")
 
     target_compile_definitions(${MB_TARGET} PRIVATE
         JUCE_MODULE_AVAILABLE_moonbase_JUCEClient=1
-        INCLUDE_MOONBASE_UI=0)
+        INCLUDE_MOONBASE_UI=1)
 
     # Moonbase module dependencies
     target_link_libraries(${MB_TARGET} PRIVATE
