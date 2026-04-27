@@ -60,6 +60,8 @@ public:
                                   int& fftSizeOut,
                                   double& sampleRateOut) const;
 
+    static constexpr int kMaxBands = 6;
+
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     {
@@ -79,21 +81,39 @@ public:
             juce::ParameterID{"MIX", 1}, "Mix",
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
 
-        // Spectral Gate Threshold (dB) - bins below this magnitude get gated
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID{"THRESHOLD", 1}, "Threshold",
-            juce::NormalisableRange<float>(-100.0f, 0.0f, 0.1f), -60.0f));
+        // Band count (2..6). Each band has its own gate; LR splits at crossover Hz.
+        params.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{"NUM_BANDS", 1}, "Bands",
+            juce::StringArray{"2", "3", "4", "5", "6"}, 1));
 
-        // Reduction amount (dB) - how much gated bins are attenuated
-        // 0 dB = no reduction (gate off), -80 dB = nearly silent
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID{"REDUCTION", 1}, "Reduction",
-            juce::NormalisableRange<float>(-80.0f, 0.0f, 0.1f), -80.0f));
+        const float defaultCrossovers[5] = { 250.0f, 800.0f, 2500.0f, 8000.0f, 14000.0f };
 
-        // Smoothing (ms) - temporal smoothing to reduce musical noise artifacts
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID{"SMOOTHING", 1}, "Smoothing",
-            juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 20.0f));
+        for (int i = 0; i < 5; ++i)
+        {
+            params.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{juce::String ("CROSSOVER_") + juce::String (i), 1},
+                juce::String ("Xover ") + juce::String (i + 1),
+                juce::NormalisableRange<float>(40.0f, 20000.0f, 1.0f, 0.35f),
+                defaultCrossovers[(size_t) i]));
+        }
+
+        for (int b = 0; b < kMaxBands; ++b)
+        {
+            const juce::String pfx = "BAND" + juce::String (b) + "_";
+            params.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{pfx + "THRESHOLD", 1}, pfx + "Threshold",
+                juce::NormalisableRange<float>(-100.0f, 0.0f, 0.1f), -60.0f));
+            params.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{pfx + "REDUCTION", 1}, pfx + "Reduction",
+                juce::NormalisableRange<float>(-80.0f, 0.0f, 0.1f), -80.0f));
+            params.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{pfx + "SMOOTHING", 1}, pfx + "Smoothing",
+                juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 20.0f));
+        }
+
+        params.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{"ACTIVE_BAND", 1}, "Edit band",
+            juce::StringArray{"Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6"}, 0));
 
         // FFT Size - controls frequency resolution vs time resolution tradeoff
         // 0=256, 1=512, 2=1024, 3=2048, 4=4096

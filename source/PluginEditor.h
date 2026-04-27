@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <memory>
+
 #include "PluginProcessor.h"
 #include "SpectrumVisualizer.h"
 #include "melatonin_inspector/melatonin_inspector.h"
@@ -10,7 +13,8 @@
     #include "moonbase_JUCEClient/moonbase_JUCEClient.h"
 #endif
 
-class PluginEditor : public juce::AudioProcessorEditor
+class PluginEditor : public juce::AudioProcessorEditor,
+                     private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     explicit PluginEditor (PluginProcessor&);
@@ -20,6 +24,11 @@ public:
     void resized() override;
 
 private:
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void rebuildGateSliderAttachments();
+    void syncActiveBandToNumBands();
+    void updateCrossoverSliderVisibility();
+
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;
 
@@ -32,17 +41,17 @@ private:
 #endif
     std::unique_ptr<melatonin::Inspector> inspector;
 
-    // Sliders
     juce::Slider inputGainSlider, outputGainSlider, mixSlider;
     juce::Slider thresholdSlider, reductionSlider, smoothingSlider;
     juce::ComboBox fftSizeCB;
+    juce::ComboBox numBandsCB, activeBandCB;
 
-    // Labels
     juce::Label inputGainLabel, outputGainLabel, mixLabel;
     juce::Label thresholdLabel, reductionLabel, smoothingLabel;
-    juce::Label fftSizeLabel;
+    juce::Label fftSizeLabel, numBandsLabel, activeBandLabel;
+    std::array<juce::Label, 5> crossoverLabels {};
+    std::array<juce::Slider, 5> crossoverSliders {};
 
-    // APVTS Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
@@ -50,8 +59,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reductionAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fftSizeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> numBandsAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> activeBandAttachment;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 5> crossoverAttachments {};
 
     void setupSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
+    void setupLinearSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

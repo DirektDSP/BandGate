@@ -1,6 +1,40 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <array>
+
+namespace
+{
+    int getNumBands (juce::AudioProcessorValueTreeState& apvts)
+    {
+        const int c = static_cast<int> (*apvts.getRawParameterValue ("NUM_BANDS"));
+        return juce::jlimit (2, PluginProcessor::kMaxBands, c + 2);
+    }
+
+    void fillBandArrays (juce::AudioProcessorValueTreeState& apvts,
+                         int numBands,
+                         double sampleRate,
+                         std::array<float, PluginProcessor::kMaxBands>& thr,
+                         std::array<float, PluginProcessor::kMaxBands>& red,
+                         std::array<float, PluginProcessor::kMaxBands>& sm,
+                         std::array<float, PluginProcessor::kMaxBands - 1>& xover)
+    {
+        for (int b = 0; b < PluginProcessor::kMaxBands; ++b)
+        {
+            const juce::String pfx = "BAND" + juce::String (b) + "_";
+            thr[(size_t) b] = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
+            red[(size_t) b] = apvts.getRawParameterValue (pfx + "REDUCTION")->load();
+            sm[(size_t) b] = apvts.getRawParameterValue (pfx + "SMOOTHING")->load();
+        }
+
+        const float maxHz = juce::jmax (50.f, (float) (sampleRate * 0.48));
+        const int nx = numBands - 1;
+        for (int i = 0; i < nx; ++i)
+            xover[(size_t) i] = juce::jlimit (40.f, maxHz,
+                                             apvts.getRawParameterValue ("CROSSOVER_" + juce::String (i))->load());
+    }
+} // namespace
+
 //==============================================================================
 PluginProcessor::PluginProcessor()
      : AudioProcessor (BusesProperties()
@@ -95,14 +129,15 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
     float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
     float mix = *apvts.getRawParameterValue("MIX");
-    float threshold = *apvts.getRawParameterValue("THRESHOLD");
-    float reduction = *apvts.getRawParameterValue("REDUCTION");
-    float smoothing = *apvts.getRawParameterValue("SMOOTHING");
     int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
     int fftOrder = fftChoiceToOrder(fftChoice);
+    const int numBands = getNumBands (apvts);
+    std::array<float, kMaxBands> thr {}, red {}, sm {};
+    std::array<float, kMaxBands - 1> xover {};
+    fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, xover);
 
-    dspProcessor.prepare(spec, inputGain, outputGain, mix,
-                         threshold, reduction, smoothing, fftOrder);
+    dspProcessor.prepare (spec, inputGain, outputGain, mix, fftOrder, numBands,
+                            thr.data(), red.data(), sm.data(), xover.data());
 
     setLatencySamples(dspProcessor.getLatencySamples());
 
@@ -150,14 +185,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
     float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
     float mix = *apvts.getRawParameterValue("MIX");
-    float threshold = *apvts.getRawParameterValue("THRESHOLD");
-    float reduction = *apvts.getRawParameterValue("REDUCTION");
-    float smoothing = *apvts.getRawParameterValue("SMOOTHING");
     int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
     int fftOrder = fftChoiceToOrder(fftChoice);
+    const int numBands = getNumBands (apvts);
+    std::array<float, kMaxBands> thr {}, red {}, sm {};
+    std::array<float, kMaxBands - 1> xover {};
+    fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, xover);
 
-    dspProcessor.updateParameters(inputGain, outputGain, mix,
-                                  threshold, reduction, smoothing, fftOrder);
+    dspProcessor.updateParameters (inputGain, outputGain, mix, fftOrder, numBands,
+                                    thr.data(), red.data(), sm.data(), xover.data());
 
     // Update latency if FFT size changed
     setLatencySamples(dspProcessor.getLatencySamples());

@@ -25,6 +25,8 @@ namespace DSP {
                 fftSize = 1 << fftOrder;
                 hopSize = fftSize / 4; // 75% overlap
                 numBins = fftSize / 2 + 1;
+                bandFirstBin = 0;
+                bandLastBin = numBins - 1;
 
                 fft = std::make_unique<juce::dsp::FFT> (fftOrder);
 
@@ -72,6 +74,13 @@ namespace DSP {
                 {
                     smoothCoeff = 0.0f;
                 }
+            }
+
+            /** Inclusive FFT bin indices where gating applies (per multiband split). Full spectrum: 0 .. numBins-1. */
+            void setBandBinRange (int inclusiveFirstBin, int inclusiveLastBin)
+            {
+                bandFirstBin = juce::jlimit (0, juce::jmax (0, numBins - 1), inclusiveFirstBin);
+                bandLastBin = juce::jlimit (bandFirstBin, juce::jmax (0, numBins - 1), inclusiveLastBin);
             }
 
             float processSample (float inputSample)
@@ -148,12 +157,20 @@ namespace DSP {
                 // Forward FFT
                 fft->performRealOnlyForwardTransform (fftWorkBuffer.data(), true);
 
-                // Spectral gating: attenuate bins below threshold
+                // Spectral gating: attenuate bins below threshold (only inside band bin range)
                 for (int bin = 0; bin < numBins; ++bin)
                 {
                     float real = fftWorkBuffer[bin * 2];
                     float imag = fftWorkBuffer[bin * 2 + 1];
                     float magnitude = std::sqrt (real * real + imag * imag);
+
+                    if (bin < bandFirstBin || bin > bandLastBin)
+                    {
+                        prevGain[(size_t) bin] = 1.0f;
+                        vizScratchMag[(size_t) bin] = juce::Decibels::gainToDecibels (juce::jmax (magnitude, 1.0e-9f), -120.0f);
+                        vizScratchGain[(size_t) bin] = 1.0f;
+                        continue;
+                    }
 
                     float targetGain = (magnitude >= thresholdLinear) ? 1.0f : reductionLinear;
 
@@ -161,13 +178,13 @@ namespace DSP {
                     float gain;
                     if (smoothCoeff > 0.0f)
                     {
-                        gain = smoothCoeff * prevGain[bin] + (1.0f - smoothCoeff) * targetGain;
-                        prevGain[bin] = gain;
+                        gain = smoothCoeff * prevGain[(size_t) bin] + (1.0f - smoothCoeff) * targetGain;
+                        prevGain[(size_t) bin] = gain;
                     }
                     else
                     {
                         gain = targetGain;
-                        prevGain[bin] = gain;
+                        prevGain[(size_t) bin] = gain;
                     }
 
                     fftWorkBuffer[bin * 2] *= gain;
@@ -206,6 +223,9 @@ namespace DSP {
             float reductionLinear = 0.0f;
             float smoothCoeff = 0.0f;
             float overlapScale = 1.0f / 1.5f;
+
+            int bandFirstBin = 0;
+            int bandLastBin = 1024;
 
             std::vector<float> window;
             std::vector<float> fftWorkBuffer;
