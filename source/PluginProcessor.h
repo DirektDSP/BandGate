@@ -105,7 +105,7 @@ public:
                 juce::NormalisableRange<float>(-100.0f, 0.0f, 0.1f), -60.0f));
             params.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{pfx + "REDUCTION", 1}, pfx + "Reduction",
-                juce::NormalisableRange<float>(-80.0f, 0.0f, 0.1f), -80.0f));
+                juce::NormalisableRange<float>(-200.0f, 0.0f, 0.1f, 0.2f), -80.0f));
             params.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{pfx + "SMOOTHING", 1}, pfx + "Smoothing",
                 juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 20.0f));

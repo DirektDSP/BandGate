@@ -86,6 +86,27 @@ namespace
             std::swap (xL, xR);
     }
 
+    void setEditBandFromSpectrumClick (juce::AudioProcessorValueTreeState& apvts, int bandIndex)
+    {
+        const int nb = getNumBands (apvts);
+        const int b = juce::jlimit (0, nb - 1, bandIndex);
+        if (auto* p = apvts.getParameter ("ACTIVE_BAND"))
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) b));
+    }
+
+    int bandIndexAtMouseX (float mx, float fMax, const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross, int nb,
+                           const juce::Rectangle<float>& plot)
+    {
+        for (int b = 0; b < nb; ++b)
+        {
+            float xL = 0, xR = 0;
+            bandXExtents (b, fMax, cross, nb, plot, xL, xR);
+            if (mx >= xL && mx <= xR)
+                return b;
+        }
+        return -1;
+    }
+
     struct SpectrumLayout
     {
         juce::Rectangle<float> plot, dbAxis, header, freqStrip;
@@ -319,6 +340,7 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
         const float xc = logNormX (cross[(size_t) i], kFreqPlotMinHz, fMax, plot.getX(), plot.getWidth());
         if (std::abs (mx - xc) <= kHitPx && my >= plot.getY() && my <= plot.getBottom())
         {
+            setEditBandFromSpectrumClick (apvts, i);
             dragKind = DragKind::crossover;
             dragCrossoverIndex = i;
             dragParam = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter ("CROSSOVER_" + juce::String (i)));
@@ -350,12 +372,21 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
 
     if (bestBand >= 0 && bestDy <= kHitPx)
     {
+        setEditBandFromSpectrumClick (apvts, bestBand);
         dragKind = DragKind::threshold;
         dragThresholdBand = bestBand;
         dragParam = dynamic_cast<juce::RangedAudioParameter*> (
             apvts.getParameter ("BAND" + juce::String (bestBand) + "_THRESHOLD"));
         if (dragParam != nullptr)
             dragParam->beginChangeGesture();
+        return;
+    }
+
+    if (mx >= plot.getX() && mx <= plot.getRight() && my >= plot.getY() && my <= plot.getBottom())
+    {
+        const int b = bandIndexAtMouseX (mx, fMax, cross, nb, plot);
+        if (b >= 0)
+            setEditBandFromSpectrumClick (apvts, b);
     }
 }
 
