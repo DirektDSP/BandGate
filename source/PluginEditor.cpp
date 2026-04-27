@@ -4,9 +4,9 @@
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p), apvts(p.getApvts())
 {
-#if !BANDGATE_NO_MOONBASE
+#if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (processorRef.moonbaseClient != nullptr)
-        activationUI.reset(processorRef.moonbaseClient->createActivationUi(*this));
+        activationUI.reset (processorRef.moonbaseClient->createActivationUi (*this));
 
     if (activationUI)
         activationUI->setWelcomePageText ("BandGate", "Made by DirektDSP");
@@ -57,7 +57,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     fftSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         processorRef.apvts, "FFT_SIZE", fftSizeCB);
 
-    setSize (700, 400);
+    addAndMakeVisible (spectrumViz);
+
+    setSize (760, 480);
 }
 
 PluginEditor::~PluginEditor()
@@ -68,9 +70,9 @@ void PluginEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour::fromRGB (30, 30, 30));
 
-    // Draw separator between top controls and spectral gate section
+    // Separator under I/O row
     g.setColour (juce::Colour::fromRGB (60, 60, 60));
-    auto area = getLocalBounds().reduced(10);
+    auto area = getLocalBounds().reduced (10);
     g.drawHorizontalLine (area.getY() + 90, (float) area.getX(), (float) area.getRight());
 }
 
@@ -90,24 +92,31 @@ void PluginEditor::resized()
     outputGainSlider.setBounds(topRow.removeFromLeft(topKnobWidth).reduced(5));
     mixSlider.setBounds(topRow.reduced(5));
 
-    area.removeFromTop(20);
+    area.removeFromTop (10);
+
+    spectrumViz.setBounds (area.removeFromTop (172));
+
+    area.removeFromTop (12);
 
     // Spectral gate controls
-    auto gateRow = area.removeFromTop(area.getHeight() * 2 / 3);
+    auto gateRow = area.removeFromTop (110);
     int gateKnobWidth = gateRow.getWidth() / 3;
 
-    thresholdSlider.setBounds(gateRow.removeFromLeft(gateKnobWidth).reduced(10));
-    reductionSlider.setBounds(gateRow.removeFromLeft(gateKnobWidth).reduced(10));
-    smoothingSlider.setBounds(gateRow.reduced(10));
+    thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10));
+    reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10));
+    smoothingSlider.setBounds (gateRow.reduced (10));
 
-    area.removeFromTop(10);
+    area.removeFromTop (8);
 
     // Bottom row: FFT Size
     auto bottomRow = area;
     int cbWidth = 120;
     fftSizeCB.setBounds(bottomRow.withSizeKeepingCentre(cbWidth, 25));
 
-    MOONBASE_RESIZE_ACTIVATION_UI
+#if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
+    if (activationUI)
+        activationUI->setBounds (getLocalBounds());
+#endif
 }
 
 //==============================================================================

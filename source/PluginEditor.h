@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "SpectrumVisualizer.h"
 #include "melatonin_inspector/melatonin_inspector.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -22,9 +23,11 @@ private:
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;
 
+    SpectrumVisualizer spectrumViz { processorRef };
+
     juce::TextButton inspectButton { "Inspect the UI" };
 
-#if !BANDGATE_NO_MOONBASE
+#if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     std::unique_ptr<Moonbase::JUCEClient::ActivationUI> activationUI;
 #endif
     std::unique_ptr<melatonin::Inspector> inspector;

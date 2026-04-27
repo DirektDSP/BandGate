@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #if BANDGATE_NO_MOONBASE
@@ -52,6 +54,11 @@ public:
     AudioProcessorValueTreeState& getApvts() { return apvts; }
 
     Service::PresetManager& getPresetManager() { return *presetManager; }
+
+    void fetchSpectralVisualData (std::vector<float>& magDbOut,
+                                  std::vector<float>& gainOut,
+                                  int& fftSizeOut,
+                                  double& sampleRateOut) const;
 
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()

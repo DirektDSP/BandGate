@@ -35,3 +35,4 @@ packaging/Output/*
 /assets/blender_assets/**
 /assets/*.psd
 /assets/Advertising
+assets/moonbase_api_config.json

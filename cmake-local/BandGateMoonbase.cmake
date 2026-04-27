@@ -37,13 +37,28 @@ function(bandgate_setup_moonbase)
         PATTERN ".git" EXCLUDE)
 
     # Run PreBuild.sh with this plugin's config
+    if(NOT EXISTS "${MB_DEST_DIR}/PreBuild.sh")
+        message(FATAL_ERROR "PreBuild.sh not found at ${MB_DEST_DIR}/PreBuild.sh")
+    endif()
+
+    # Convert to absolute path if relative
+    if(NOT IS_ABSOLUTE "${MB_CONFIG_JSON}")
+        set(MB_CONFIG_JSON "${CMAKE_SOURCE_DIR}/assets/${MB_CONFIG_JSON}")
+    endif()
+
+    if(NOT EXISTS "${MB_CONFIG_JSON}")
+        message(FATAL_ERROR "Config JSON not found at ${MB_CONFIG_JSON}")
+    endif()
+
     execute_process(
         COMMAND bash "${MB_DEST_DIR}/PreBuild.sh" "${MB_CONFIG_JSON}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        RESULT_VARIABLE MB_RESULT)
+        RESULT_VARIABLE MB_RESULT
+        OUTPUT_VARIABLE MB_OUTPUT
+        ERROR_VARIABLE MB_ERROR)
 
     if(NOT MB_RESULT EQUAL 0)
-        message(FATAL_ERROR "moonbase PreBuild.sh failed for ${MB_TARGET}")
+        message(FATAL_ERROR "moonbase PreBuild.sh failed for ${MB_TARGET}\nSTDOUT: ${MB_OUTPUT}\nSTDERR: ${MB_ERROR}")
     endif()
 
     # Add moonbase sources directly to the target

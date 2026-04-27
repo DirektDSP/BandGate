@@ -48,6 +48,14 @@ namespace DSP {
 
                 // Window compensation: with 75% overlap Hann squared, the sum is 1.5
                 overlapScale = 1.0f / 1.5f;
+
+                {
+                    const juce::ScopedLock sl (vizLock);
+                    vizMagDb.assign ((size_t) numBins, -120.0f);
+                    vizGain.assign ((size_t) numBins, 1.0f);
+                    vizScratchMag.resize ((size_t) numBins);
+                    vizScratchGain.resize ((size_t) numBins);
+                }
             }
 
             void updateParameters (float thresholdDb, float reductionDb, float smoothing)
@@ -99,6 +107,29 @@ namespace DSP {
 
             int getLatencySamples() const { return fftSize; }
 
+            int getFftSize() const noexcept { return fftSize; }
+
+            double getSampleRate() const noexcept { return sampleRate; }
+
+            /** Thread-safe copy for UI (message thread holds lock; audio uses tryLock). */
+            void copyVisualSnapshot (std::vector<float>& magDbOut,
+                                     std::vector<float>& gainOut,
+                                     int& numBinsOut) const
+            {
+                const juce::ScopedLock sl (vizLock);
+                if ((int) vizMagDb.size() != numBins || (int) vizGain.size() != numBins)
+                {
+                    numBinsOut = 0;
+                    magDbOut.clear();
+                    gainOut.clear();
+                    return;
+                }
+
+                numBinsOut = numBins;
+                magDbOut = vizMagDb;
+                gainOut = vizGain;
+            }
+
         private:
             void processFFTFrame()
             {
@@ -141,6 +172,15 @@ namespace DSP {
 
                     fftWorkBuffer[bin * 2] *= gain;
                     fftWorkBuffer[bin * 2 + 1] *= gain;
+
+                    vizScratchMag[(size_t) bin] = juce::Decibels::gainToDecibels (juce::jmax (magnitude, 1.0e-9f), -120.0f);
+                    vizScratchGain[(size_t) bin] = gain;
+                }
+
+                if (const juce::ScopedTryLock vizTry (vizLock); vizTry.isLocked())
+                {
+                    vizMagDb.swap (vizScratchMag);
+                    vizGain.swap (vizScratchGain);
                 }
 
                 // Inverse FFT
@@ -179,6 +219,12 @@ namespace DSP {
             std::vector<float> outputAccum;
             int outputReadPos = 0;
             int samplesUntilNextFrame = 0;
+
+            mutable juce::CriticalSection vizLock;
+            mutable std::vector<float> vizMagDb;
+            mutable std::vector<float> vizGain;
+            std::vector<float> vizScratchMag;
+            std::vector<float> vizScratchGain;
         };
 
     } // namespace Core

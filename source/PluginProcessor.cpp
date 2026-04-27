@@ -186,6 +186,14 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     copyXmlToBinary(*xml, destData);
 }
 
+void PluginProcessor::fetchSpectralVisualData (std::vector<float>& magDbOut,
+                                                std::vector<float>& gainOut,
+                                                int& fftSizeOut,
+                                                double& sampleRateOut) const
+{
+    dspProcessor.fetchSpectralVisualData (magDbOut, gainOut, fftSizeOut, sampleRateOut);
+}
+
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));

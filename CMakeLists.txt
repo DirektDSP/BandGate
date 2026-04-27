@@ -70,7 +70,7 @@ clap_juce_extensions_plugin(TARGET "${PROJECT_NAME}"
 # Per-plugin moonbase config generation + linking
 bandgate_setup_moonbase(
     TARGET "${PROJECT_NAME}"
-    CONFIG_JSON "${CMAKE_CURRENT_SOURCE_DIR}/moonbase_api_config.json")
+    CONFIG_JSON "moonbase_api_config.json")
 
 # Compiler options
 if (MSVC)

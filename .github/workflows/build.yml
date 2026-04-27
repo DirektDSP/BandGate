@@ -302,8 +302,8 @@ jobs:
           script-file: packaging/installer.nsi
           arguments: >-
             /DVERSION=${{ steps.version.outputs.version }}
-            /DARTIFACTS_DIR=..\artifacts\windows
-            /DOUTDIR=..\artifacts
+            /DARTIFACTS_DIR=${{ github.workspace }}\artifacts\windows
+            /DOUTDIR=${{ github.workspace }}\artifacts
 
       - name: Upload installer
         uses: actions/upload-artifact@v4

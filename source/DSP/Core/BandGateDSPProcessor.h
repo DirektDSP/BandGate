@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
@@ -130,6 +132,36 @@ namespace DSP {
             }
 
             int getLatencySamples() const { return currentLatency; }
+
+            /** Editor / UI: latest spectrum (dB per bin, smoothed gate gain). Stereo = average mag, min gain. */
+            void fetchSpectralVisualData (std::vector<float>& magDbOut,
+                                          std::vector<float>& gainOut,
+                                          int& fftSizeOut,
+                                          double& sampleRateOut) const
+            {
+                sampleRateOut = sampleRate;
+                fftSizeOut = spectralGate[0].getFftSize();
+
+                int n0 = 0;
+                spectralGate[0].copyVisualSnapshot (magDbOut, gainOut, n0);
+
+                if (numChannels > 1)
+                {
+                    std::vector<float> m1, g1;
+                    int n1 = 0;
+                    spectralGate[1].copyVisualSnapshot (m1, g1, n1);
+                    const int use = juce::jmin (n0, n1);
+
+                    for (int i = 0; i < use; ++i)
+                    {
+                        const float l0 = std::pow (10.0f, magDbOut[(size_t) i] * 0.05f);
+                        const float l1 = std::pow (10.0f, m1[(size_t) i] * 0.05f);
+                        const float lavg = 0.5f * (l0 + l1);
+                        magDbOut[(size_t) i] = juce::Decibels::gainToDecibels (juce::jmax (lavg, 1.0e-12f), -120.0f);
+                        gainOut[(size_t) i] = juce::jmin (gainOut[(size_t) i], g1[(size_t) i]);
+                    }
+                }
+            }
 
         private:
             void prepareParameterSmoothers()
