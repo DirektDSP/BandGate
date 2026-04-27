@@ -25,17 +25,15 @@ BrandingText "DirektDSP BandGate ${VERSION}"
 ;----------------------------------------------------------------------
 ; MUI2 Appearance
 ;----------------------------------------------------------------------
+; Boilerplate BMP/ICO in this folder — replace with final branding later.
 
-; Icons
 !define MUI_ICON "icon.ico"
 !define MUI_UNICON "icon.ico"
 
-; Header image (top banner on most pages)
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_BITMAP "header.bmp"
 !define MUI_HEADERIMAGE_RIGHT
 
-; Welcome / Finish page sidebar image
 !define MUI_WELCOMEFINISHPAGE_BITMAP "welcome.bmp"
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP "welcome.bmp"
 
@@ -65,7 +63,7 @@ BrandingText "DirektDSP BandGate ${VERSION}"
 ;----------------------------------------------------------------------
 
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "LICENSE.txt"
+!insertmacro MUI_PAGE_LICENSE "resources/EULA"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
