@@ -43,6 +43,7 @@ private:
 
     juce::Slider inputGainSlider, outputGainSlider, mixSlider;
     juce::Slider thresholdSlider, reductionSlider, smoothingSlider;
+    juce::ToggleButton flipButton { "Flip" };
     juce::ComboBox fftSizeCB;
     juce::ComboBox numBandsCB, activeBandCB;
 
@@ -58,6 +59,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thresholdAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reductionAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothingAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> flipAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> numBandsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> activeBandAttachment;

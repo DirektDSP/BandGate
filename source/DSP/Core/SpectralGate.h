@@ -60,10 +60,11 @@ namespace DSP {
                 }
             }
 
-            void updateParameters (float thresholdDb, float reductionDb, float smoothing)
+            void updateParameters (float thresholdDb, float reductionDb, float smoothing, bool invert)
             {
                 thresholdLinear = std::pow (10.0f, thresholdDb / 20.0f);
                 reductionLinear = std::pow (10.0f, reductionDb / 20.0f);
+                invertGate = invert;
 
                 if (smoothing > 0.0f && sampleRate > 0.0)
                 {
@@ -172,7 +173,9 @@ namespace DSP {
                         continue;
                     }
 
-                    float targetGain = (magnitude >= thresholdLinear) ? 1.0f : reductionLinear;
+                    const bool passesThreshold = magnitude >= thresholdLinear;
+                    const bool keepSample = invertGate ? !passesThreshold : passesThreshold;
+                    float targetGain = keepSample ? 1.0f : reductionLinear;
 
                     // Temporal smoothing to reduce musical noise
                     float gain;
@@ -223,6 +226,7 @@ namespace DSP {
             float reductionLinear = 0.0f;
             float smoothCoeff = 0.0f;
             float overlapScale = 1.0f / 1.5f;
+            bool invertGate = false;
 
             int bandFirstBin = 0;
             int bandLastBin = 1024;

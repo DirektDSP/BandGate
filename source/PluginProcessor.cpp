@@ -17,6 +17,7 @@ namespace
                          std::array<float, PluginProcessor::kMaxBands>& thr,
                          std::array<float, PluginProcessor::kMaxBands>& red,
                          std::array<float, PluginProcessor::kMaxBands>& sm,
+                         std::array<bool, PluginProcessor::kMaxBands>& flip,
                          std::array<float, PluginProcessor::kMaxBands - 1>& xover)
     {
         for (int b = 0; b < PluginProcessor::kMaxBands; ++b)
@@ -25,6 +26,7 @@ namespace
             thr[(size_t) b] = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
             red[(size_t) b] = apvts.getRawParameterValue (pfx + "REDUCTION")->load();
             sm[(size_t) b] = apvts.getRawParameterValue (pfx + "SMOOTHING")->load();
+            flip[(size_t) b] = apvts.getRawParameterValue (pfx + "FLIP")->load() > 0.5f;
         }
 
         const float maxHz = juce::jmax (50.f, (float) (sampleRate * 0.48));
@@ -133,11 +135,12 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     int fftOrder = fftChoiceToOrder(fftChoice);
     const int numBands = getNumBands (apvts);
     std::array<float, kMaxBands> thr {}, red {}, sm {};
+    std::array<bool, kMaxBands> flip {};
     std::array<float, kMaxBands - 1> xover {};
-    fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, xover);
+    fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, flip, xover);
 
     dspProcessor.prepare (spec, inputGain, outputGain, mix, fftOrder, numBands,
-                            thr.data(), red.data(), sm.data(), xover.data());
+                          thr.data(), red.data(), sm.data(), flip.data(), xover.data());
 
     setLatencySamples(dspProcessor.getLatencySamples());
 
@@ -189,11 +192,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     int fftOrder = fftChoiceToOrder(fftChoice);
     const int numBands = getNumBands (apvts);
     std::array<float, kMaxBands> thr {}, red {}, sm {};
+    std::array<bool, kMaxBands> flip {};
     std::array<float, kMaxBands - 1> xover {};
-    fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, xover);
+    fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, flip, xover);
 
     dspProcessor.updateParameters (inputGain, outputGain, mix, fftOrder, numBands,
-                                    thr.data(), red.data(), sm.data(), xover.data());
+                                   thr.data(), red.data(), sm.data(), flip.data(), xover.data());
 
     // Update latency if FFT size changed
     setLatencySamples(dspProcessor.getLatencySamples());

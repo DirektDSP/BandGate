@@ -54,6 +54,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setupSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
     setupSlider (reductionSlider, reductionLabel, "Reduction", "dB");
     setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms");
+    addAndMakeVisible (flipButton);
 
     addAndMakeVisible (fftSizeCB);
     addAndMakeVisible (fftSizeLabel);
@@ -151,6 +152,7 @@ void PluginEditor::rebuildGateSliderAttachments()
     thresholdAttachment.reset();
     reductionAttachment.reset();
     smoothingAttachment.reset();
+    flipAttachment.reset();
 
     thresholdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "THRESHOLD", thresholdSlider);
@@ -158,6 +160,8 @@ void PluginEditor::rebuildGateSliderAttachments()
         apvts, pfx + "REDUCTION", reductionSlider);
     smoothingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "SMOOTHING", smoothingSlider);
+    flipAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        apvts, pfx + "FLIP", flipButton);
 }
 
 void PluginEditor::updateCrossoverSliderVisibility()
@@ -274,11 +278,14 @@ void PluginEditor::resized()
     area.removeFromTop (Layout::gap);
 
     auto gateRow = area.removeFromTop (Layout::gateH);
-    const int gateKnobWidth = juce::jmax (130, gateRow.getWidth() / 3);
+    const int flipW = 80;
+    const int gateKnobWidth = juce::jmax (120, (gateRow.getWidth() - flipW - Layout::gap) / 3);
 
     thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
     reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
-    smoothingSlider.setBounds (gateRow.reduced (10, 8));
+    smoothingSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
+    gateRow.removeFromLeft (Layout::gap);
+    flipButton.setBounds (gateRow.withSizeKeepingCentre (flipW, 24));
 
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (activationUI)

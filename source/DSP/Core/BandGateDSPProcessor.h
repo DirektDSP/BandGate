@@ -31,6 +31,7 @@ namespace DSP {
                           const float* bandThresholdDb = nullptr,
                           const float* bandReductionDb = nullptr,
                           const float* bandSmoothingMs = nullptr,
+                          const bool* bandFlip = nullptr,
                           const float* crossoverHz = nullptr)
             {
                 sampleRate = spec.sampleRate;
@@ -38,7 +39,7 @@ namespace DSP {
                 numChannels = static_cast<int> (spec.numChannels);
 
                 activeNumBands = juce::jlimit (2, kMaxBands, numBands);
-                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, crossoverHz);
+                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, crossoverHz);
 
                 splitter.prepare (spec);
 
@@ -53,7 +54,8 @@ namespace DSP {
                         if (b < activeNumBands)
                             spectralGate[(size_t) ch][(size_t) b].updateParameters (thrDb[(size_t) b],
                                                                                   redDb[(size_t) b],
-                                                                                  smoothMs[(size_t) b]);
+                                                                                  smoothMs[(size_t) b],
+                                                                                  flipByBand[(size_t) b]);
                     }
                 }
 
@@ -77,7 +79,7 @@ namespace DSP {
             void updateParameters (SampleType inputGainDb, SampleType outputGainDb,
                                    SampleType mixPercent, int fftOrder, int numBands,
                                    const float* bandThresholdDb, const float* bandReductionDb,
-                                   const float* bandSmoothingMs, const float* crossoverHz)
+                                   const float* bandSmoothingMs, const bool* bandFlip, const float* crossoverHz)
             {
                 const int nb = juce::jlimit (2, kMaxBands, numBands);
                 if (nb != lastActiveNumBands)
@@ -94,7 +96,7 @@ namespace DSP {
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mixPercent));
 
                 activeNumBands = nb;
-                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, crossoverHz);
+                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, crossoverHz);
 
                 for (int sp = 0; sp < activeNumBands - 1; ++sp)
                     splitter.setCutoff (sp, static_cast<SampleType> (crossoverSorted[(size_t) sp]));
@@ -105,7 +107,8 @@ namespace DSP {
                     {
                         spectralGate[(size_t) ch][(size_t) b].updateParameters (thrDb[(size_t) b],
                                                                                redDb[(size_t) b],
-                                                                               smoothMs[(size_t) b]);
+                                                                               smoothMs[(size_t) b],
+                                                                               flipByBand[(size_t) b]);
                     }
                 }
 
@@ -120,7 +123,8 @@ namespace DSP {
                             if (b < activeNumBands)
                                 spectralGate[(size_t) ch][(size_t) b].updateParameters (thrDb[(size_t) b],
                                                                                       redDb[(size_t) b],
-                                                                                      smoothMs[(size_t) b]);
+                                                                                      smoothMs[(size_t) b],
+                                                                                      flipByBand[(size_t) b]);
                         }
                     }
                     currentLatency = spectralGate[0][0].getLatencySamples();
@@ -250,13 +254,14 @@ namespace DSP {
 
         private:
             void copyBandParams (const float* bandThresholdDb, const float* bandReductionDb,
-                                 const float* bandSmoothingMs, const float* crossoverHz)
+                                 const float* bandSmoothingMs, const bool* bandFlip, const float* crossoverHz)
             {
                 for (int i = 0; i < kMaxBands; ++i)
                 {
                     thrDb[(size_t) i] = bandThresholdDb != nullptr ? bandThresholdDb[i] : -60.0f;
                     redDb[(size_t) i] = bandReductionDb != nullptr ? bandReductionDb[i] : -80.0f;
                     smoothMs[(size_t) i] = bandSmoothingMs != nullptr ? bandSmoothingMs[i] : 20.0f;
+                    flipByBand[(size_t) i] = bandFlip != nullptr ? bandFlip[i] : false;
                 }
 
                 const int nCross = activeNumBands > 1 ? activeNumBands - 1 : 0;
@@ -336,6 +341,7 @@ namespace DSP {
             std::array<float, kMaxBands> thrDb {};
             std::array<float, kMaxBands> redDb {};
             std::array<float, kMaxBands> smoothMs {};
+            std::array<bool, kMaxBands> flipByBand {};
             std::array<float, kMaxBands - 1> crossoverSorted {};
             int lastActiveNumBands = -1;
         };
