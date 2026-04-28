@@ -29,7 +29,10 @@ function(bandgate_setup_moonbase)
     endif()
 
     set(MB_SOURCE_DIR "${CMAKE_SOURCE_DIR}/modules/moonbase_JUCEClient")
-    set(MB_DEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/moonbase_JUCEClient")
+    # Keep moonbase include root isolated from full build dir so C++ stdlib headers
+    # like <version> cannot be shadowed by generated files in ${CMAKE_BINARY_DIR}.
+    set(MB_INCLUDE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/moonbase_include_root")
+    set(MB_DEST_DIR "${MB_INCLUDE_ROOT}/moonbase_JUCEClient")
 
     # Copy moonbase module to build directory
     file(COPY "${MB_SOURCE_DIR}/"
@@ -88,12 +91,12 @@ function(bandgate_setup_moonbase)
         target_sources(${MB_TARGET} PRIVATE "${MB_DEST_DIR}/moonbase_JUCEClient.cpp")
     endif()
 
-    # IMPORTANT: Add the build dir BEFORE any other include paths
-    # so that headers from the build copy are found first (not the source module).
+    # IMPORTANT: Add build-copy dirs BEFORE any other include paths so headers from
+    # generated moonbase copy are found first (not source module).
     target_include_directories(${MB_TARGET} BEFORE PRIVATE "${MB_DEST_DIR}")
     # <moonbase_JUCEClient/...> includes must resolve to the *build* copy (PreBuild), not
     # modules/moonbase_JUCEClient, or MoonbaseBinary.h is parsed twice and const defs ODR-fail.
-    target_include_directories(${MB_TARGET} BEFORE PRIVATE "${CMAKE_BINARY_DIR}")
+    target_include_directories(${MB_TARGET} BEFORE PRIVATE "${MB_INCLUDE_ROOT}")
 
     target_compile_definitions(${MB_TARGET} PRIVATE
         JUCE_MODULE_AVAILABLE_moonbase_JUCEClient=1
