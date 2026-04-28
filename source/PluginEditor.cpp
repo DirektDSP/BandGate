@@ -50,6 +50,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     setupSlider (inputGainSlider, inputGainLabel, "Input", "dB");
     setupSlider (outputGainSlider, outputGainLabel, "Output", "dB");
+    setupSlider (parallelGainSlider, parallelGainLabel, "Drive", "dB");
     setupSlider (mixSlider, mixLabel, "Mix", "%");
     setupSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
     setupSlider (reductionSlider, reductionLabel, "Reduction", "dB");
@@ -71,12 +72,41 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     numBandsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     numBandsLabel.setJustificationType (juce::Justification::centredRight);
 
-    addAndMakeVisible (activeBandCB);
-    addAndMakeVisible (activeBandLabel);
-    activeBandCB.addItemList (juce::StringArray { "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6" }, 1);
-    activeBandLabel.setText ("Edit band", juce::dontSendNotification);
-    activeBandLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    activeBandLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (spectrumMinDbCB);
+    addAndMakeVisible (spectrumMinDbLabel);
+    addAndMakeVisible (spectrumMaxDbCB);
+    addAndMakeVisible (spectrumMaxDbLabel);
+    const juce::StringArray dbSteps { "-96 dB", "-84 dB", "-72 dB", "-60 dB", "-48 dB", "-36 dB", "-24 dB", "-12 dB", "0 dB", "+12 dB", "+24 dB" };
+    spectrumMinDbCB.addItemList (dbSteps, 1);
+    spectrumMaxDbCB.addItemList (dbSteps, 1);
+    spectrumMinDbCB.setSelectedId (1, juce::dontSendNotification);
+    spectrumMaxDbCB.setSelectedId (11, juce::dontSendNotification);
+    auto applySpectrumDbRange = [this] (bool minChanged)
+    {
+        const float minDb = -96.0f + 12.0f * (float) (spectrumMinDbCB.getSelectedId() - 1);
+        const float maxDb = -96.0f + 12.0f * (float) (spectrumMaxDbCB.getSelectedId() - 1);
+
+        if (minDb >= maxDb)
+        {
+            if (minChanged)
+                spectrumMaxDbCB.setSelectedId (juce::jlimit (2, 11, spectrumMinDbCB.getSelectedId() + 1), juce::dontSendNotification);
+            else
+                spectrumMinDbCB.setSelectedId (juce::jlimit (1, 10, spectrumMaxDbCB.getSelectedId() - 1), juce::dontSendNotification);
+        }
+
+        const float fixedMinDb = -96.0f + 12.0f * (float) (spectrumMinDbCB.getSelectedId() - 1);
+        const float fixedMaxDb = -96.0f + 12.0f * (float) (spectrumMaxDbCB.getSelectedId() - 1);
+        spectrumViz.setVerticalDbRange (fixedMinDb, fixedMaxDb);
+    };
+    spectrumMinDbCB.onChange = [applySpectrumDbRange] { applySpectrumDbRange (true); };
+    spectrumMaxDbCB.onChange = [applySpectrumDbRange] { applySpectrumDbRange (false); };
+    spectrumMinDbLabel.setText ("Min dB", juce::dontSendNotification);
+    spectrumMinDbLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    spectrumMinDbLabel.setJustificationType (juce::Justification::centredRight);
+    spectrumMaxDbLabel.setText ("Max dB", juce::dontSendNotification);
+    spectrumMaxDbLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    spectrumMaxDbLabel.setJustificationType (juce::Justification::centredRight);
+    spectrumViz.setVerticalDbRange (-96.0f, 24.0f);
 
     soloButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::orange.withAlpha (0.85f));
     soloButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
@@ -94,15 +124,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         apvts, "INPUT_GAIN", inputGainSlider);
     outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "OUTPUT_GAIN", outputGainSlider);
+    parallelGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, "PARALLEL_GAIN", parallelGainSlider);
     mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "MIX", mixSlider);
     fftSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "FFT_SIZE", fftSizeCB);
     numBandsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "NUM_BANDS", numBandsCB);
-    activeBandAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-        apvts, "ACTIVE_BAND", activeBandCB);
-
     rebuildGateSliderAttachments();
     updateCrossoverSliderVisibility();
 
@@ -236,10 +265,11 @@ void PluginEditor::resized()
 
     auto topRow = area.removeFromTop (Layout::topKnobsH);
     const int pad = 8;
-    const int topKnobWidth = juce::jmax (120, (topRow.getWidth() - 2 * pad) / 3);
+    const int topKnobWidth = juce::jmax (96, (topRow.getWidth() - 3 * pad) / 4);
 
     inputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (pad, 6));
     outputGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (pad, 6));
+    parallelGainSlider.setBounds (topRow.removeFromLeft (topKnobWidth).reduced (pad, 6));
     mixSlider.setBounds (topRow.reduced (pad, 6));
 
     area.removeFromTop (Layout::gap);
@@ -252,7 +282,7 @@ void PluginEditor::resized()
         auto bandRow = area.removeFromTop (Layout::bandBarH);
         const int lab = 52;
         const int comboFixed = 64;
-        const int comboWide = 108;
+        const int dbCombo = 88;
 
         auto b1 = bandRow.removeFromLeft (lab + comboFixed);
         numBandsLabel.setBounds (b1.removeFromLeft (lab));
@@ -260,9 +290,15 @@ void PluginEditor::resized()
 
         bandRow.removeFromLeft (Layout::gap);
 
-        auto b2 = bandRow.removeFromLeft (lab + comboWide);
-        activeBandLabel.setBounds (b2.removeFromLeft (lab));
-        activeBandCB.setBounds (b2.reduced (0, 6));
+        auto minDb = bandRow.removeFromLeft (lab + dbCombo);
+        spectrumMinDbLabel.setBounds (minDb.removeFromLeft (lab));
+        spectrumMinDbCB.setBounds (minDb.reduced (0, 6));
+
+        bandRow.removeFromLeft (Layout::gap);
+
+        auto maxDb = bandRow.removeFromLeft (lab + dbCombo);
+        spectrumMaxDbLabel.setBounds (maxDb.removeFromLeft (lab));
+        spectrumMaxDbCB.setBounds (maxDb.reduced (0, 6));
 
         bandRow.removeFromLeft (Layout::gap);
 

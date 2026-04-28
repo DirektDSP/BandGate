@@ -132,6 +132,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
     float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float parallelGain = *apvts.getRawParameterValue("PARALLEL_GAIN");
     float mix = *apvts.getRawParameterValue("MIX");
     int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
     int fftOrder = fftChoiceToOrder(fftChoice);
@@ -141,7 +142,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     std::array<float, kMaxBands - 1> xover {};
     fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, flip, solo, xover);
 
-    dspProcessor.prepare (spec, inputGain, outputGain, mix, fftOrder, numBands,
+    dspProcessor.prepare (spec, inputGain, outputGain, parallelGain, mix, fftOrder, numBands,
                           thr.data(), red.data(), sm.data(), flip.data(), solo.data(), xover.data());
 
     setLatencySamples(dspProcessor.getLatencySamples());
@@ -153,9 +154,10 @@ void PluginProcessor::releaseResources()
 {
     float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
     float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float parallelGain = *apvts.getRawParameterValue("PARALLEL_GAIN");
     float mix = *apvts.getRawParameterValue("MIX");
 
-    dspProcessor.reset(inputGain, outputGain, mix);
+    dspProcessor.reset(inputGain, outputGain, parallelGain, mix);
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -189,6 +191,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     float inputGain = *apvts.getRawParameterValue("INPUT_GAIN");
     float outputGain = *apvts.getRawParameterValue("OUTPUT_GAIN");
+    float parallelGain = *apvts.getRawParameterValue("PARALLEL_GAIN");
     float mix = *apvts.getRawParameterValue("MIX");
     int fftChoice = static_cast<int>(*apvts.getRawParameterValue("FFT_SIZE"));
     int fftOrder = fftChoiceToOrder(fftChoice);
@@ -198,7 +201,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     std::array<float, kMaxBands - 1> xover {};
     fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, flip, solo, xover);
 
-    dspProcessor.updateParameters (inputGain, outputGain, mix, fftOrder, numBands,
+    dspProcessor.updateParameters (inputGain, outputGain, parallelGain, mix, fftOrder, numBands,
                                    thr.data(), red.data(), sm.data(), flip.data(), solo.data(), xover.data());
 
     // Update latency if FFT size changed

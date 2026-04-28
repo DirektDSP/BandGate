@@ -25,6 +25,7 @@ namespace DSP {
             void prepare (const juce::dsp::ProcessSpec& spec,
                           SampleType inputGain = SampleType { 0.0 },
                           SampleType outputGain = SampleType { 0.0 },
+                          SampleType parallelGain = SampleType { 0.0 },
                           SampleType mix = SampleType { 100.0 },
                           int fftOrder = 11,
                           int numBands = 2,
@@ -67,6 +68,8 @@ namespace DSP {
                 inputGainSmoother.snapToTargetValue();
                 outputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (outputGain));
                 outputGainSmoother.snapToTargetValue();
+                parallelGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (parallelGain));
+                parallelGainSmoother.snapToTargetValue();
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mix));
                 mixSmoother.snapToTargetValue();
 
@@ -78,6 +81,7 @@ namespace DSP {
             }
 
             void updateParameters (SampleType inputGainDb, SampleType outputGainDb,
+                                   SampleType parallelGainDb,
                                    SampleType mixPercent, int fftOrder, int numBands,
                                    const float* bandThresholdDb, const float* bandReductionDb,
                                    const float* bandSmoothingMs, const bool* bandFlip,
@@ -95,6 +99,7 @@ namespace DSP {
 
                 inputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (inputGainDb));
                 outputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (outputGainDb));
+                parallelGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (parallelGainDb));
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mixPercent));
 
                 activeNumBands = nb;
@@ -151,14 +156,17 @@ namespace DSP {
                 for (int i = 0; i < numSamples; ++i)
                 {
                     const auto inputGain = inputGainSmoother.getNextValue();
+                    const auto parallelGain = parallelGainSmoother.getNextValue();
                     const auto mix = mixSmoother.getNextValue();
                     const auto outputGain = outputGainSmoother.getNextValue();
+                    const auto effectiveInputGain = inputGain * parallelGain;
+                    const auto effectiveOutputGain = outputGain / juce::jmax (parallelGain, SampleType { 1.0e-6 });
 
                     const int nCh = juce::jmin (buffer.getNumChannels(), 2);
                     for (int channel = 0; channel < nCh; ++channel)
                     {
                         auto* channelData = buffer.getWritePointer (channel);
-                        auto sample = channelData[i] * static_cast<float> (inputGain);
+                        auto sample = channelData[i] * static_cast<float> (effectiveInputGain);
 
                         splitter.processSample (channel, static_cast<SampleType> (sample),
                                                 bandSamps.data(), activeNumBands);
@@ -180,13 +188,14 @@ namespace DSP {
                         channelData[i] = static_cast<SampleType> (
                             (static_cast<float> (drySample) * (1.0f - static_cast<float> (mix))
                              + static_cast<float> (wetSum) * static_cast<float> (mix))
-                            * static_cast<float> (outputGain));
+                            * static_cast<float> (effectiveOutputGain));
                     }
                 }
             }
 
             void reset (SampleType inputGain = SampleType { 0.0 },
                         SampleType outputGain = SampleType { 0.0 },
+                        SampleType parallelGain = SampleType { 0.0 },
                         SampleType mix = SampleType { 100.0 })
             {
                 splitter.reset();
@@ -200,6 +209,9 @@ namespace DSP {
                 outputGainSmoother.reset (Utils::DSPUtils::dbToGain (outputGain));
                 outputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (outputGain));
                 outputGainSmoother.snapToTargetValue();
+                parallelGainSmoother.reset (Utils::DSPUtils::dbToGain (parallelGain));
+                parallelGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (parallelGain));
+                parallelGainSmoother.snapToTargetValue();
                 mixSmoother.reset (Utils::DSPUtils::percentageToNormalized (mix));
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mix));
                 mixSmoother.snapToTargetValue();
@@ -332,6 +344,7 @@ namespace DSP {
             {
                 inputGainSmoother.prepare (sampleRate, 1.0);
                 outputGainSmoother.prepare (sampleRate, 1.0);
+                parallelGainSmoother.prepare (sampleRate, 1.0);
                 mixSmoother.prepare (sampleRate, 5.0);
             }
 
@@ -340,6 +353,7 @@ namespace DSP {
 
             Utils::ParameterSmoother<SampleType> inputGainSmoother;
             Utils::ParameterSmoother<SampleType> outputGainSmoother;
+            Utils::ParameterSmoother<SampleType> parallelGainSmoother;
             Utils::ParameterSmoother<SampleType> mixSmoother;
 
             juce::AudioBuffer<SampleType> dryBuffer;

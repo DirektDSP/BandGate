@@ -70,11 +70,15 @@ public:
         // Input/Output Gains
         params.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID{"INPUT_GAIN", 1}, "Input",
-            juce::NormalisableRange<float>(-48.0f, 24.0f, 0.1f), 0.0f));
+            juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f));
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID{"OUTPUT_GAIN", 1}, "Output",
-            juce::NormalisableRange<float>(-48.0f, 24.0f, 0.1f), 0.0f));
+            juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f));
+
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{"PARALLEL_GAIN", 1}, "Drive",
+            juce::NormalisableRange<float>(-36.0f, 36.0f, 0.1f), 0.0f));
 
         // Mix
         params.push_back(std::make_unique<juce::AudioParameterFloat>(

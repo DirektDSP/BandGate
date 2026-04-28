@@ -23,6 +23,10 @@ public:
     void mouseExit (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
 
+    void setVerticalDbRange (float minDb, float maxDb);
+    float getVerticalMinDb() const noexcept;
+    float getVerticalMaxDb() const noexcept;
+
 private:
     void timerCallback() override;
 
@@ -35,6 +39,8 @@ private:
     DragKind dragKind = DragKind::none;
     int dragCrossoverIndex = 0;
     int dragThresholdBand = 0;
+    float verticalMinDb = -96.0f;
+    float verticalMaxDb = 24.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumVisualizer)
 };

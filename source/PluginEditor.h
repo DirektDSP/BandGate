@@ -41,21 +41,22 @@ private:
 #endif
     std::unique_ptr<melatonin::Inspector> inspector;
 
-    juce::Slider inputGainSlider, outputGainSlider, mixSlider;
+    juce::Slider inputGainSlider, outputGainSlider, parallelGainSlider, mixSlider;
     juce::Slider thresholdSlider, reductionSlider, smoothingSlider;
     juce::ToggleButton flipButton { "Flip" };
     juce::ToggleButton soloButton { "Solo" };
     juce::ComboBox fftSizeCB;
-    juce::ComboBox numBandsCB, activeBandCB;
+    juce::ComboBox numBandsCB, spectrumMinDbCB, spectrumMaxDbCB;
 
-    juce::Label inputGainLabel, outputGainLabel, mixLabel;
+    juce::Label inputGainLabel, outputGainLabel, parallelGainLabel, mixLabel;
     juce::Label thresholdLabel, reductionLabel, smoothingLabel;
-    juce::Label fftSizeLabel, numBandsLabel, activeBandLabel;
+    juce::Label fftSizeLabel, numBandsLabel, spectrumMinDbLabel, spectrumMaxDbLabel;
     std::array<juce::Label, 5> crossoverLabels {};
     std::array<juce::Slider, 5> crossoverSliders {};
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> parallelGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thresholdAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reductionAttachment;
@@ -64,7 +65,6 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> numBandsAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> activeBandAttachment;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 5> crossoverAttachments {};
 
     void setupSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);

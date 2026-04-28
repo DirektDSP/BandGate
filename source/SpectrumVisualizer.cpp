@@ -10,8 +10,6 @@
 namespace
 {
     constexpr float kFreqPlotMinHz = 20.f;
-    constexpr float kDbFloor = -100.f;
-    constexpr float kDbCeil = 6.f;
     constexpr float kHitPx = 8.f;
 
     float logNormX (float hz, float fMin, float fMax, float x0, float width)
@@ -29,16 +27,16 @@ namespace
         return std::pow (10.f, logLo + t * (logHi - logLo));
     }
 
-    float dbToY (float db, juce::Rectangle<float> plot)
+    float dbToY (float db, juce::Rectangle<float> plot, float dbFloor, float dbCeil)
     {
-        const float t = juce::jlimit (0.f, 1.f, (db - kDbFloor) / (kDbCeil - kDbFloor));
+        const float t = juce::jlimit (0.f, 1.f, (db - dbFloor) / (dbCeil - dbFloor));
         return plot.getBottom() - t * plot.getHeight();
     }
 
-    float yToDb (float my, juce::Rectangle<float> plot)
+    float yToDb (float my, juce::Rectangle<float> plot, float dbFloor, float dbCeil)
     {
         const float t = juce::jlimit (0.f, 1.f, (plot.getBottom() - my) / juce::jmax (plot.getHeight(), 1.f));
-        return kDbFloor + t * (kDbCeil - kDbFloor);
+        return dbFloor + t * (dbCeil - dbFloor);
     }
 
     int getNumBands (juce::AudioProcessorValueTreeState& apvts)
@@ -191,6 +189,31 @@ void SpectrumVisualizer::timerCallback()
     repaint();
 }
 
+void SpectrumVisualizer::setVerticalDbRange (float minDb, float maxDb)
+{
+    minDb = juce::jlimit (-96.0f, 24.0f, minDb);
+    maxDb = juce::jlimit (-96.0f, 24.0f, maxDb);
+    if (minDb >= maxDb)
+        maxDb = juce::jmin (24.0f, minDb + 12.0f);
+
+    if (verticalMinDb == minDb && verticalMaxDb == maxDb)
+        return;
+
+    verticalMinDb = minDb;
+    verticalMaxDb = maxDb;
+    repaint();
+}
+
+float SpectrumVisualizer::getVerticalMinDb() const noexcept
+{
+    return verticalMinDb;
+}
+
+float SpectrumVisualizer::getVerticalMaxDb() const noexcept
+{
+    return verticalMaxDb;
+}
+
 juce::Rectangle<float> SpectrumVisualizer::getPlotArea (juce::Rectangle<float> bounds) const
 {
     return makeLayout (bounds).plot;
@@ -206,6 +229,8 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
 
     const auto L = makeLayout (bounds);
     const auto& plot = L.plot;
+    const float dbFloor = verticalMinDb;
+    const float dbCeil = verticalMaxDb;
 
     std::vector<float> magDb, gain;
     int fftSize = 0;
@@ -232,19 +257,25 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
     paintBandHeaders (g, L, fMax, nb, cross, solo, anySoloActive);
 
     g.setColour (juce::Colour (0xff3d4249).withAlpha (0.85f));
-    for (float dbMark : { -80.f, -60.f, -40.f, -20.f, 0.f })
+    for (float dbMark : { -96.f, -84.f, -72.f, -60.f, -48.f, -36.f, -24.f, -12.f, 0.f, 12.f, 24.f })
     {
-        const float y = dbToY (dbMark, plot);
+        if (dbMark < dbFloor || dbMark > dbCeil)
+            continue;
+        const float y = dbToY (dbMark, plot, dbFloor, dbCeil);
         g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
     }
 
     g.setColour (juce::Colour (0xff8b919a).withAlpha (0.9f));
     g.setFont (10.5f);
-    for (float dbMark : { -80.f, -60.f, -40.f, -20.f, 0.f })
+    for (float dbMark : { -96.f, -84.f, -72.f, -60.f, -48.f, -36.f, -24.f, -12.f, 0.f, 12.f, 24.f })
     {
-        const float y = dbToY (dbMark, plot);
+        if (dbMark < dbFloor || dbMark > dbCeil)
+            continue;
+        const float y = dbToY (dbMark, plot, dbFloor, dbCeil);
         auto tr = juce::Rectangle<int> ((int) L.dbAxis.getX(), (int) (y - 7.f), (int) L.dbAxis.getWidth() - 2, 14);
-        g.drawText (juce::String (juce::roundToInt (dbMark)), tr, juce::Justification::centredRight, false);
+        const juce::String text = dbMark > 0.f ? "+" + juce::String (juce::roundToInt (dbMark))
+                                               : juce::String (juce::roundToInt (dbMark));
+        g.drawText (text, tr, juce::Justification::centredRight, false);
     }
 
     if (fftSize <= 0 || magDb.empty())
@@ -273,7 +304,7 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
 
         const float mDb = magDb[(size_t) bin];
         const float gv = gain[(size_t) bin];
-        const float yTop = dbToY (mDb, plot);
+        const float yTop = dbToY (mDb, plot, dbFloor, dbCeil);
         const float yBottom = plot.getBottom();
         const float barH = juce::jmax (yBottom - yTop, 1.f);
 
@@ -290,7 +321,7 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
     {
         const juce::String pfx = "BAND" + juce::String (b) + "_";
         const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
-        const float yThr = dbToY (thrDb, plot);
+        const float yThr = dbToY (thrDb, plot, dbFloor, dbCeil);
         float xL = 0, xR = 0;
         bandXExtents (b, fMax, cross, nb, plot, xL, xR);
         auto col = bandColour (b);
@@ -348,6 +379,8 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
     const float nyquist = (float) (processor.getSampleRate() * 0.5);
     const float fMax = juce::jmax (kFreqPlotMinHz * 2.f, nyquist);
     auto plot = getPlotArea (bounds);
+    const float dbFloor = verticalMinDb;
+    const float dbCeil = verticalMaxDb;
     const float mx = (float) e.position.getX();
     const float my = (float) e.position.getY();
 
@@ -384,7 +417,7 @@ void SpectrumVisualizer::mouseDown (const juce::MouseEvent& e)
 
         const juce::String pfx = "BAND" + juce::String (b) + "_";
         const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
-        const float yThr = dbToY (thrDb, plot);
+        const float yThr = dbToY (thrDb, plot, dbFloor, dbCeil);
         const float dy = std::abs (my - yThr);
         if (dy < bestDy)
         {
@@ -422,6 +455,8 @@ void SpectrumVisualizer::mouseDrag (const juce::MouseEvent& e)
     const float nyquist = (float) (processor.getSampleRate() * 0.5);
     const float fMax = juce::jmax (kFreqPlotMinHz * 2.f, nyquist);
     auto plot = getPlotArea (bounds);
+    const float dbFloor = verticalMinDb;
+    const float dbCeil = verticalMaxDb;
     const float mx = (float) e.position.getX();
     const float my = (float) e.position.getY();
 
@@ -433,7 +468,7 @@ void SpectrumVisualizer::mouseDrag (const juce::MouseEvent& e)
     }
     else
     {
-        float db = yToDb (my, plot);
+        float db = yToDb (my, plot, dbFloor, dbCeil);
         db = juce::jlimit (-100.f, 0.f, db);
         dragParam->setValueNotifyingHost (dragParam->convertTo0to1 (db));
     }
@@ -445,6 +480,8 @@ void SpectrumVisualizer::mouseMove (const juce::MouseEvent& e)
     const float nyquist = (float) (processor.getSampleRate() * 0.5);
     const float fMax = juce::jmax (kFreqPlotMinHz * 2.f, nyquist);
     auto plot = getPlotArea (bounds);
+    const float dbFloor = verticalMinDb;
+    const float dbCeil = verticalMaxDb;
     const float mx = (float) e.position.getX();
     const float my = (float) e.position.getY();
 
@@ -474,7 +511,7 @@ void SpectrumVisualizer::mouseMove (const juce::MouseEvent& e)
 
         const juce::String pfx = "BAND" + juce::String (b) + "_";
         const float thrDb = apvts.getRawParameterValue (pfx + "THRESHOLD")->load();
-        const float yThr = dbToY (thrDb, plot);
+        const float yThr = dbToY (thrDb, plot, dbFloor, dbCeil);
         if (std::abs (my - yThr) <= kHitPx)
         {
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);

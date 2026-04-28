@@ -35,6 +35,11 @@ namespace DSP {
                 for (int i = 0; i < fftSize; ++i)
                     window[i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi * i / (float) fftSize));
 
+                // Normalize FFT bin magnitudes to roughly dBFS amplitude domain.
+                // For Hann, coherent gain is ~0.5 so 2/N keeps threshold behavior intuitive.
+                const float coherentGain = 0.5f;
+                magnitudeNormalization = 1.0f / (coherentGain * static_cast<float> (fftSize));
+
                 // Working buffers
                 fftWorkBuffer.resize (fftSize * 2, 0.0f);
                 prevGain.resize (numBins, 0.0f);
@@ -163,7 +168,7 @@ namespace DSP {
                 {
                     float real = fftWorkBuffer[bin * 2];
                     float imag = fftWorkBuffer[bin * 2 + 1];
-                    float magnitude = std::sqrt (real * real + imag * imag);
+                    float magnitude = std::sqrt (real * real + imag * imag) * magnitudeNormalization;
 
                     if (bin < bandFirstBin || bin > bandLastBin)
                     {
@@ -226,6 +231,7 @@ namespace DSP {
             float reductionLinear = 0.0f;
             float smoothCoeff = 0.0f;
             float overlapScale = 1.0f / 1.5f;
+            float magnitudeNormalization = 1.0f / (0.5f * 2048.0f);
             bool invertGate = false;
 
             int bandFirstBin = 0;
