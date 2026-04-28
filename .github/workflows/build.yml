@@ -80,9 +80,9 @@ jobs:
             MAC=true; HAS_PLATFORM=true
           fi
 
-          # Default: linux + windows (no mac yet)
+          # Default: run all platforms
           if [[ "$HAS_PLATFORM" == "false" ]]; then
-            LINUX=true; WIN=true
+            LINUX=true; WIN=true; MAC=true
           fi
 
           echo "run_linux=$LINUX" >> "$GITHUB_OUTPUT"
