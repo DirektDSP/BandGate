@@ -111,6 +111,8 @@ public:
                 juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 20.0f));
             params.push_back (std::make_unique<juce::AudioParameterBool> (
                 juce::ParameterID { pfx + "FLIP", 1 }, pfx + "Flip", false));
+            params.push_back (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { pfx + "SOLO", 1 }, pfx + "Solo", false));
         }
 
         params.push_back(std::make_unique<juce::AudioParameterChoice>(

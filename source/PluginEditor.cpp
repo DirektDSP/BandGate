@@ -55,6 +55,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setupSlider (reductionSlider, reductionLabel, "Reduction", "dB");
     setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms");
     addAndMakeVisible (flipButton);
+    addAndMakeVisible (soloButton);
 
     addAndMakeVisible (fftSizeCB);
     addAndMakeVisible (fftSizeLabel);
@@ -76,6 +77,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     activeBandLabel.setText ("Edit band", juce::dontSendNotification);
     activeBandLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     activeBandLabel.setJustificationType (juce::Justification::centredRight);
+
+    soloButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::orange.withAlpha (0.85f));
+    soloButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+    soloButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
 
     for (int i = 0; i < 5; ++i)
     {
@@ -153,6 +158,7 @@ void PluginEditor::rebuildGateSliderAttachments()
     reductionAttachment.reset();
     smoothingAttachment.reset();
     flipAttachment.reset();
+    soloAttachment.reset();
 
     thresholdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "THRESHOLD", thresholdSlider);
@@ -162,6 +168,8 @@ void PluginEditor::rebuildGateSliderAttachments()
         apvts, pfx + "SMOOTHING", smoothingSlider);
     flipAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
         apvts, pfx + "FLIP", flipButton);
+    soloAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        apvts, pfx + "SOLO", soloButton);
 }
 
 void PluginEditor::updateCrossoverSliderVisibility()
@@ -279,13 +287,16 @@ void PluginEditor::resized()
 
     auto gateRow = area.removeFromTop (Layout::gateH);
     const int flipW = 80;
-    const int gateKnobWidth = juce::jmax (120, (gateRow.getWidth() - flipW - Layout::gap) / 3);
+    const int soloW = 80;
+    const int gateKnobWidth = juce::jmax (110, (gateRow.getWidth() - flipW - soloW - Layout::gap * 2) / 3);
 
     thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
     reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
     smoothingSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
     gateRow.removeFromLeft (Layout::gap);
-    flipButton.setBounds (gateRow.withSizeKeepingCentre (flipW, 24));
+    flipButton.setBounds (gateRow.removeFromLeft (flipW).withSizeKeepingCentre (flipW, 24));
+    gateRow.removeFromLeft (Layout::gap);
+    soloButton.setBounds (gateRow.removeFromLeft (soloW).withSizeKeepingCentre (soloW, 24));
 
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (activationUI)

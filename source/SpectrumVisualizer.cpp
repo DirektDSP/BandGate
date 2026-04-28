@@ -124,14 +124,20 @@ namespace
     }
 
     void paintBandLanes (juce::Graphics& g, const juce::Rectangle<float>& plot, float fMax, int nb,
-                         const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross)
+                         const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross,
+                         const std::array<bool, (size_t) PluginProcessor::kMaxBands>& solo,
+                         bool anySoloActive)
     {
         const int nx = nb - 1;
         for (int band = 0; band < nb; ++band)
         {
             float xL = 0, xR = 0;
             bandXExtents (band, fMax, cross, nb, plot, xL, xR);
-            g.setColour (bandColour (band).withAlpha (0.11f));
+            const bool mutedBySolo = anySoloActive && ! solo[(size_t) band];
+            auto lane = bandColour (band).withAlpha (0.11f);
+            if (mutedBySolo)
+                lane = lane.withMultipliedSaturation (0.08f).withMultipliedBrightness (0.7f);
+            g.setColour (lane);
             g.fillRect (xL, plot.getY(), juce::jmax (xR - xL, 1.f), plot.getHeight());
         }
 
@@ -144,7 +150,9 @@ namespace
     }
 
     void paintBandHeaders (juce::Graphics& g, const SpectrumLayout& L, float fMax, int nb,
-                           const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross)
+                           const std::array<float, (size_t) PluginProcessor::kMaxBands - 1>& cross,
+                           const std::array<bool, (size_t) PluginProcessor::kMaxBands>& solo,
+                           bool anySoloActive)
     {
         g.setFont (12.f);
         for (int band = 0; band < nb; ++band)
@@ -156,7 +164,11 @@ namespace
             auto r = juce::Rectangle<int> ((int) std::floor (cx - 0.5f * (float) rw), (int) L.header.getY() + 1, rw, (int) L.header.getHeight() - 2);
             const juce::String name = (xR - xL) < 52.f ? ("B" + juce::String (band + 1))
                                                        : ("Band " + juce::String (band + 1));
-            g.setColour (bandColour (band).brighter (0.15f));
+            const bool mutedBySolo = anySoloActive && ! solo[(size_t) band];
+            auto txt = bandColour (band).brighter (0.15f);
+            if (mutedBySolo)
+                txt = txt.withMultipliedSaturation (0.08f).withMultipliedBrightness (0.85f);
+            g.setColour (txt);
             g.drawText (name, r, juce::Justification::centred, false);
         }
     }
@@ -207,10 +219,17 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
     const int nb = getNumBands (apvts);
     const int nx = nb - 1;
     std::array<float, (size_t) PluginProcessor::kMaxBands - 1> cross {};
+    std::array<bool, (size_t) PluginProcessor::kMaxBands> solo {};
     copySortedCrossovers (apvts, nx, cross);
+    bool anySoloActive = false;
+    for (int b = 0; b < nb; ++b)
+    {
+        solo[(size_t) b] = apvts.getRawParameterValue ("BAND" + juce::String (b) + "_SOLO")->load() > 0.5f;
+        anySoloActive = anySoloActive || solo[(size_t) b];
+    }
 
-    paintBandLanes (g, plot, fMax, nb, cross);
-    paintBandHeaders (g, L, fMax, nb, cross);
+    paintBandLanes (g, plot, fMax, nb, cross, solo, anySoloActive);
+    paintBandHeaders (g, L, fMax, nb, cross, solo, anySoloActive);
 
     g.setColour (juce::Colour (0xff3d4249).withAlpha (0.85f));
     for (float dbMark : { -80.f, -60.f, -40.f, -20.f, 0.f })
@@ -260,7 +279,9 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
 
         const auto base = bandColour (bandIdx);
         const float atten = juce::jlimit (0.f, 1.f, 1.f - gv);
-        const juce::Colour fill = base.interpolatedWith (juce::Colour (0xffff7040), atten * 0.85f);
+        juce::Colour fill = base.interpolatedWith (juce::Colour (0xffff7040), atten * 0.85f);
+        if (anySoloActive && ! solo[(size_t) bandIdx])
+            fill = fill.withMultipliedSaturation (0.0f).withMultipliedBrightness (0.6f);
         g.setColour (fill.withAlpha (juce::jmap (atten, 0.f, 1.f, 0.42f, 0.78f)));
         g.fillRect (barLeft, yTop, barW, barH);
     }
@@ -272,7 +293,9 @@ void SpectrumVisualizer::paint (juce::Graphics& g)
         const float yThr = dbToY (thrDb, plot);
         float xL = 0, xR = 0;
         bandXExtents (b, fMax, cross, nb, plot, xL, xR);
-        const auto col = bandColour (b);
+        auto col = bandColour (b);
+        if (anySoloActive && ! solo[(size_t) b])
+            col = col.withMultipliedSaturation (0.0f).withMultipliedBrightness (0.72f);
         g.setColour (col.brighter (0.1f));
         g.drawLine (xL, yThr, xR, yThr, 2.2f);
         const float hx = juce::jlimit (xL + 6.f, xR - 6.f, xR - 5.f);
