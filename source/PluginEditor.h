@@ -28,6 +28,7 @@ private:
     void rebuildGateSliderAttachments();
     void syncActiveBandToNumBands();
     void updateCrossoverSliderVisibility();
+    void maybeShowUpdateInfoModalOnLaunch();
 
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;

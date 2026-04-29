@@ -2,6 +2,8 @@
 
 namespace
 {
+    bool gUpdateInfoModalShown = false;
+
     int numBandsFromApvts (juce::AudioProcessorValueTreeState& apvts)
     {
         const int c = static_cast<int> (*apvts.getRawParameterValue ("NUM_BANDS"));
@@ -33,8 +35,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         activationUI.reset (processorRef.moonbaseClient->createActivationUi (*this));
 
     if (activationUI)
+    {
         activationUI->setWelcomePageText ("BandGate", "Made by DirektDSP");
+        activationUI->enableUpdateBadge();
+    }
 #endif
+
+    maybeShowUpdateInfoModalOnLaunch();
 
     #ifdef JUCE_DEBUG
         addAndMakeVisible (inspectButton);
@@ -142,6 +149,40 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     setSize (Layout::defaultWidth, Layout::defaultHeight);
     setResizeLimits (760, 540, 1600, 900);
+}
+
+void PluginEditor::maybeShowUpdateInfoModalOnLaunch()
+{
+#if BANDGATE_NO_MOONBASE
+    return;
+#else
+    if (gUpdateInfoModalShown || processorRef.moonbaseClient == nullptr)
+        return;
+
+    if (! processorRef.moonbaseClient->isUpdateAvailable())
+        return;
+
+    const auto currentVersion = processorRef.moonbaseClient->getProductVersion();
+    const auto latestVersion = processorRef.moonbaseClient->getCurrentReleaseVersion();
+    gUpdateInfoModalShown = true;
+
+    juce::MessageManager::callAsync ([this, currentVersion, latestVersion]
+    {
+        juce::NativeMessageBox::showYesNoBox (
+            juce::MessageBoxIconType::InfoIcon,
+            "BandGate Update Available",
+            "The interwebs thinks that a newer BandGate release is available.\n\n"
+            "Installed version: " + currentVersion + "\n"
+            "Latest release: " + latestVersion + "\n\n"
+            "Open License Manager now to update?",
+            nullptr,
+            juce::ModalCallbackFunction::create ([safeThis = juce::Component::SafePointer<PluginEditor> (this)] (int result)
+            {
+                if (result == 1 && safeThis != nullptr && safeThis->processorRef.moonbaseClient != nullptr)
+                    safeThis->processorRef.moonbaseClient->showActivationUi();
+            }));
+    });
+#endif
 }
 
 PluginEditor::~PluginEditor()
