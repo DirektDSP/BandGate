@@ -31,7 +31,9 @@ PATCH="${BASH_REMATCH[3]}"
 BASE_URL="https://${MOONBASE_ACCOUNT_ID}.moonbase.sh/api"
 UPLOAD_TMP_DIR="$(mktemp -d)"
 DOWNLOADS_JSONL="${UPLOAD_TMP_DIR}/downloads.jsonl"
+PACKAGE_STAGING_DIR="${UPLOAD_TMP_DIR}/packages"
 touch "$DOWNLOADS_JSONL"
+mkdir -p "$PACKAGE_STAGING_DIR"
 
 cleanup() {
   rm -rf "$UPLOAD_TMP_DIR"
@@ -93,11 +95,23 @@ PY
 }
 
 while IFS= read -r -d '' path; do
-  base_name="$(basename "$path")"
-  parent_hint="$(basename "$(dirname "$path")")"
-  platform="$(detect_platform "${parent_hint}/${base_name}")"
-  prepare_and_upload "$path" "$base_name" "$platform"
-done < <(find "$ARTIFACT_ROOT" -mindepth 2 -maxdepth 2 -print0)
+  artifact_dir_name="$(basename "$path")"
+  platform="$(detect_platform "$artifact_dir_name")"
+  platform_staging_dir="${PACKAGE_STAGING_DIR}/${platform}"
+  mkdir -p "$platform_staging_dir"
+
+  # Copy all files from each artifact bundle into a per-platform staging area.
+  # Preserve symlinks/directories so plugin bundles remain intact before zipping.
+  cp -a "${path}/." "$platform_staging_dir/"
+done < <(find "$ARTIFACT_ROOT" -mindepth 1 -maxdepth 1 -type d -print0)
+
+while IFS= read -r -d '' platform_dir; do
+  platform="$(basename "$platform_dir")"
+  package_name="DirektDSP-BandGate-${VERSION_STR}-${platform}.zip"
+  package_path="${UPLOAD_TMP_DIR}/${package_name}"
+  (cd "$platform_dir" && zip -r -q "$package_path" .)
+  prepare_and_upload "$package_path" "$package_name" "$platform"
+done < <(find "$PACKAGE_STAGING_DIR" -mindepth 1 -maxdepth 1 -type d -print0)
 
 if [[ ! -s "$DOWNLOADS_JSONL" ]]; then
   echo "No artifacts found to upload under $ARTIFACT_ROOT"
