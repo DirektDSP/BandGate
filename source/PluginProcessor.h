@@ -85,10 +85,10 @@ public:
             juce::ParameterID{"MIX", 1}, "Mix",
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
 
-        // Band count (2..6). Each band has its own gate; LR splits at crossover Hz.
+        // Band count (1..6). Each band has its own gate; LR splits at crossover Hz.
         params.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{"NUM_BANDS", 1}, "Bands",
-            juce::StringArray{"2", "3", "4", "5", "6"}, 1));
+            juce::StringArray{"1", "2", "3", "4", "5", "6"}, 1));
 
         const float defaultCrossovers[5] = { 250.0f, 800.0f, 2500.0f, 8000.0f, 14000.0f };
 
@@ -117,6 +117,8 @@ public:
                 juce::ParameterID { pfx + "FLIP", 1 }, pfx + "Flip", false));
             params.push_back (std::make_unique<juce::AudioParameterBool> (
                 juce::ParameterID { pfx + "SOLO", 1 }, pfx + "Solo", false));
+            params.push_back (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { pfx + "MUTE", 1 }, pfx + "Mute", false));
         }
 
         params.push_back(std::make_unique<juce::AudioParameterChoice>(
@@ -124,17 +126,21 @@ public:
             juce::StringArray{"Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6"}, 0));
 
         // FFT Size - controls frequency resolution vs time resolution tradeoff
-        // 0=256, 1=512, 2=1024, 3=2048, 4=4096
+        // 0=256, 1=512, 2=1024, 3=2048, 4=4096, 5=16384, 6=32768
         params.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{"FFT_SIZE", 1}, "FFT Size",
-            juce::StringArray{"256", "512", "1024", "2048", "4096"}, 3));
+            juce::StringArray{"256", "512", "1024", "2048", "4096", "16384", "32768"}, 3));
 
         return { params.begin(), params.end() };
     }
 
     static int fftChoiceToOrder (int choiceIndex)
     {
-        // 0=256(8), 1=512(9), 2=1024(10), 3=2048(11), 4=4096(12)
+        // 0=256(8), 1=512(9), 2=1024(10), 3=2048(11), 4=4096(12), 5=16384(14), 6=32768(15)
+        if (choiceIndex >= 6)
+            return 15;
+        if (choiceIndex >= 5)
+            return 14;
         return choiceIndex + 8;
     }
 

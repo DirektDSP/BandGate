@@ -27,8 +27,8 @@ private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void rebuildGateSliderAttachments();
     void syncActiveBandToNumBands();
-    void updateCrossoverSliderVisibility();
     void maybeShowUpdateInfoModalOnLaunch();
+    void updateLatencyLabel();
 
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;
@@ -46,14 +46,14 @@ private:
     juce::Slider thresholdSlider, reductionSlider, smoothingSlider;
     juce::ToggleButton flipButton { "Flip" };
     juce::ToggleButton soloButton { "Solo" };
+    juce::ToggleButton muteButton { "Mute" };
     juce::ComboBox fftSizeCB;
     juce::ComboBox numBandsCB, spectrumMinDbCB, spectrumMaxDbCB;
 
     juce::Label inputGainLabel, outputGainLabel, parallelGainLabel, mixLabel;
     juce::Label thresholdLabel, reductionLabel, smoothingLabel;
     juce::Label fftSizeLabel, numBandsLabel, spectrumMinDbLabel, spectrumMaxDbLabel;
-    std::array<juce::Label, 5> crossoverLabels {};
-    std::array<juce::Slider, 5> crossoverSliders {};
+    juce::Label latencyLabel;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
@@ -64,12 +64,13 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> flipAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> numBandsAttachment;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 5> crossoverAttachments {};
 
     void setupSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
     void setupLinearSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
+    void setupVerticalSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

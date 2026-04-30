@@ -68,7 +68,8 @@ namespace DSP {
             void updateParameters (float thresholdDb, float reductionDb, float smoothing, bool invert)
             {
                 thresholdLinear = std::pow (10.0f, thresholdDb / 20.0f);
-                reductionLinear = std::pow (10.0f, reductionDb / 20.0f);
+                reductionLinear = reductionDb <= -120.0f ? 0.0f
+                                                         : std::pow (10.0f, reductionDb / 20.0f);
                 invertGate = invert;
 
                 if (smoothing > 0.0f && sampleRate > 0.0)

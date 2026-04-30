@@ -8,7 +8,7 @@ namespace
     int getNumBands (juce::AudioProcessorValueTreeState& apvts)
     {
         const int c = static_cast<int> (*apvts.getRawParameterValue ("NUM_BANDS"));
-        return juce::jlimit (2, PluginProcessor::kMaxBands, c + 2);
+        return juce::jlimit (1, PluginProcessor::kMaxBands, c + 1);
     }
 
     void fillBandArrays (juce::AudioProcessorValueTreeState& apvts,
@@ -19,6 +19,7 @@ namespace
                          std::array<float, PluginProcessor::kMaxBands>& sm,
                          std::array<bool, PluginProcessor::kMaxBands>& flip,
                          std::array<bool, PluginProcessor::kMaxBands>& solo,
+                         std::array<bool, PluginProcessor::kMaxBands>& mute,
                          std::array<float, PluginProcessor::kMaxBands - 1>& xover)
     {
         for (int b = 0; b < PluginProcessor::kMaxBands; ++b)
@@ -29,6 +30,7 @@ namespace
             sm[(size_t) b] = apvts.getRawParameterValue (pfx + "SMOOTHING")->load();
             flip[(size_t) b] = apvts.getRawParameterValue (pfx + "FLIP")->load() > 0.5f;
             solo[(size_t) b] = apvts.getRawParameterValue (pfx + "SOLO")->load() > 0.5f;
+            mute[(size_t) b] = apvts.getRawParameterValue (pfx + "MUTE")->load() > 0.5f;
         }
 
         const float maxHz = juce::jmax (50.f, (float) (sampleRate * 0.48));
@@ -138,12 +140,12 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     int fftOrder = fftChoiceToOrder(fftChoice);
     const int numBands = getNumBands (apvts);
     std::array<float, kMaxBands> thr {}, red {}, sm {};
-    std::array<bool, kMaxBands> flip {}, solo {};
+    std::array<bool, kMaxBands> flip {}, solo {}, mute {};
     std::array<float, kMaxBands - 1> xover {};
-    fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, flip, solo, xover);
+    fillBandArrays (apvts, numBands, sampleRate, thr, red, sm, flip, solo, mute, xover);
 
     dspProcessor.prepare (spec, inputGain, outputGain, parallelGain, mix, fftOrder, numBands,
-                          thr.data(), red.data(), sm.data(), flip.data(), solo.data(), xover.data());
+                          thr.data(), red.data(), sm.data(), flip.data(), solo.data(), mute.data(), xover.data());
 
     setLatencySamples(dspProcessor.getLatencySamples());
 
@@ -197,12 +199,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     int fftOrder = fftChoiceToOrder(fftChoice);
     const int numBands = getNumBands (apvts);
     std::array<float, kMaxBands> thr {}, red {}, sm {};
-    std::array<bool, kMaxBands> flip {}, solo {};
+    std::array<bool, kMaxBands> flip {}, solo {}, mute {};
     std::array<float, kMaxBands - 1> xover {};
-    fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, flip, solo, xover);
+    fillBandArrays (apvts, numBands, getSampleRate(), thr, red, sm, flip, solo, mute, xover);
 
     dspProcessor.updateParameters (inputGain, outputGain, parallelGain, mix, fftOrder, numBands,
-                                   thr.data(), red.data(), sm.data(), flip.data(), solo.data(), xover.data());
+                                   thr.data(), red.data(), sm.data(), flip.data(), solo.data(), mute.data(), xover.data());
 
     // Update latency if FFT size changed
     setLatencySamples(dspProcessor.getLatencySamples());

@@ -28,20 +28,21 @@ namespace DSP {
                           SampleType parallelGain = SampleType { 0.0 },
                           SampleType mix = SampleType { 100.0 },
                           int fftOrder = 11,
-                          int numBands = 2,
+                          int numBands = 1,
                           const float* bandThresholdDb = nullptr,
                           const float* bandReductionDb = nullptr,
                           const float* bandSmoothingMs = nullptr,
                           const bool* bandFlip = nullptr,
                           const bool* bandSolo = nullptr,
+                          const bool* bandMute = nullptr,
                           const float* crossoverHz = nullptr)
             {
                 sampleRate = spec.sampleRate;
                 samplesPerBlock = static_cast<int> (spec.maximumBlockSize);
                 numChannels = static_cast<int> (spec.numChannels);
 
-                activeNumBands = juce::jlimit (2, kMaxBands, numBands);
-                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, bandSolo, crossoverHz);
+                activeNumBands = juce::jlimit (1, kMaxBands, numBands);
+                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, bandSolo, bandMute, crossoverHz);
 
                 splitter.prepare (spec);
 
@@ -78,6 +79,7 @@ namespace DSP {
                 currentLatency = spectralGate[0][0].getLatencySamples();
                 currentFFTOrder = fftOrder;
                 lastActiveNumBands = activeNumBands;
+                configureDryDelayCompensation();
             }
 
             void updateParameters (SampleType inputGainDb, SampleType outputGainDb,
@@ -85,9 +87,9 @@ namespace DSP {
                                    SampleType mixPercent, int fftOrder, int numBands,
                                    const float* bandThresholdDb, const float* bandReductionDb,
                                    const float* bandSmoothingMs, const bool* bandFlip,
-                                   const bool* bandSolo, const float* crossoverHz)
+                                   const bool* bandSolo, const bool* bandMute, const float* crossoverHz)
             {
-                const int nb = juce::jlimit (2, kMaxBands, numBands);
+                const int nb = juce::jlimit (1, kMaxBands, numBands);
                 if (nb != lastActiveNumBands)
                 {
                     lastActiveNumBands = nb;
@@ -103,7 +105,7 @@ namespace DSP {
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mixPercent));
 
                 activeNumBands = nb;
-                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, bandSolo, crossoverHz);
+                copyBandParams (bandThresholdDb, bandReductionDb, bandSmoothingMs, bandFlip, bandSolo, bandMute, crossoverHz);
 
                 for (int sp = 0; sp < activeNumBands - 1; ++sp)
                     splitter.setCutoff (sp, static_cast<SampleType> (crossoverSorted[(size_t) sp]));
@@ -135,6 +137,7 @@ namespace DSP {
                         }
                     }
                     currentLatency = spectralGate[0][0].getLatencySamples();
+                    configureDryDelayCompensation();
                 }
 
                 recomputeBandBinRanges (fftOrder);
@@ -178,15 +181,16 @@ namespace DSP {
 
                         for (int b = 0; b < activeNumBands; ++b)
                         {
-                            const bool bandAudible = ! anySoloActive || soloByBand[(size_t) b];
+                            const bool bandAudible = (! anySoloActive || soloByBand[(size_t) b]) && ! muteByBand[(size_t) b];
                             const auto bandSample = static_cast<SampleType> (
                                 spectralGate[(size_t) channel][(size_t) b].processSample (static_cast<float> (bandSamps[(size_t) b])));
                             wetSum += bandAudible ? bandSample : SampleType { 0 };
                         }
 
                         auto drySample = dryBuffer.getSample (channel, i);
+                        const auto dryAligned = pushDryDelayAndGet (channel, static_cast<SampleType> (drySample));
                         channelData[i] = static_cast<SampleType> (
-                            (static_cast<float> (drySample) * (1.0f - static_cast<float> (mix))
+                            (static_cast<float> (dryAligned) * (1.0f - static_cast<float> (mix))
                              + static_cast<float> (wetSum) * static_cast<float> (mix))
                             * static_cast<float> (effectiveOutputGain));
                     }
@@ -215,6 +219,7 @@ namespace DSP {
                 mixSmoother.reset (Utils::DSPUtils::percentageToNormalized (mix));
                 mixSmoother.setTargetValue (Utils::DSPUtils::percentageToNormalized (mix));
                 mixSmoother.snapToTargetValue();
+                resetDryDelayCompensation();
             }
 
             int getLatencySamples() const { return currentLatency; }
@@ -278,7 +283,7 @@ namespace DSP {
         private:
             void copyBandParams (const float* bandThresholdDb, const float* bandReductionDb,
                                  const float* bandSmoothingMs, const bool* bandFlip,
-                                 const bool* bandSolo, const float* crossoverHz)
+                                 const bool* bandSolo, const bool* bandMute, const float* crossoverHz)
             {
                 for (int i = 0; i < kMaxBands; ++i)
                 {
@@ -287,6 +292,7 @@ namespace DSP {
                     smoothMs[(size_t) i] = bandSmoothingMs != nullptr ? bandSmoothingMs[i] : 20.0f;
                     flipByBand[(size_t) i] = bandFlip != nullptr ? bandFlip[i] : false;
                     soloByBand[(size_t) i] = bandSolo != nullptr ? bandSolo[i] : false;
+                    muteByBand[(size_t) i] = bandMute != nullptr ? bandMute[i] : false;
                 }
 
                 const int nCross = activeNumBands > 1 ? activeNumBands - 1 : 0;
@@ -348,6 +354,42 @@ namespace DSP {
                 mixSmoother.prepare (sampleRate, 5.0);
             }
 
+            void configureDryDelayCompensation()
+            {
+                dryDelaySamples = juce::jmax (0, currentLatency);
+                const int needed = juce::jmax (1, dryDelaySamples + 1);
+                for (auto& buf : dryDelayBuffers)
+                    buf.assign ((size_t) needed, SampleType { 0 });
+                dryDelayWritePos = 0;
+            }
+
+            void resetDryDelayCompensation()
+            {
+                for (auto& buf : dryDelayBuffers)
+                    std::fill (buf.begin(), buf.end(), SampleType { 0 });
+                dryDelayWritePos = 0;
+            }
+
+            SampleType pushDryDelayAndGet (int channel, SampleType inSample)
+            {
+                if (channel < 0 || channel >= (int) dryDelayBuffers.size())
+                    return inSample;
+
+                auto& buf = dryDelayBuffers[(size_t) channel];
+                if (buf.empty())
+                    return inSample;
+
+                const int size = (int) buf.size();
+                const int readPos = (dryDelayWritePos + size - dryDelaySamples) % size;
+                const auto out = buf[(size_t) readPos];
+                buf[(size_t) dryDelayWritePos] = inSample;
+
+                if (channel == juce::jmin (numChannels, 2) - 1)
+                    dryDelayWritePos = (dryDelayWritePos + 1) % size;
+
+                return out;
+            }
+
             MultiBandLinkwitzRileySplitter<SampleType> splitter;
             std::array<std::array<SpectralGate, kMaxBands>, 2> spectralGate {};
 
@@ -363,15 +405,19 @@ namespace DSP {
             int numChannels = 2;
             int currentLatency = 2048;
             int currentFFTOrder = 11;
-            int activeNumBands = 2;
+            int activeNumBands = 1;
 
             std::array<float, kMaxBands> thrDb {};
             std::array<float, kMaxBands> redDb {};
             std::array<float, kMaxBands> smoothMs {};
             std::array<bool, kMaxBands> flipByBand {};
             std::array<bool, kMaxBands> soloByBand {};
+            std::array<bool, kMaxBands> muteByBand {};
             std::array<float, kMaxBands - 1> crossoverSorted {};
             int lastActiveNumBands = -1;
+            std::array<std::vector<SampleType>, 2> dryDelayBuffers {};
+            int dryDelaySamples = 0;
+            int dryDelayWritePos = 0;
         };
 
     } // namespace Core

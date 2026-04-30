@@ -7,7 +7,7 @@ namespace
     int numBandsFromApvts (juce::AudioProcessorValueTreeState& apvts)
     {
         const int c = static_cast<int> (*apvts.getRawParameterValue ("NUM_BANDS"));
-        return juce::jlimit (2, PluginProcessor::kMaxBands, c + 2);
+        return juce::jlimit (1, PluginProcessor::kMaxBands, c + 1);
     }
 
     // Single source of truth for layout — keeps paint() and resized() aligned and avoids overflow.
@@ -18,7 +18,6 @@ namespace
         static constexpr int topKnobsH = 92;
         static constexpr int spectrumH = 200;
         static constexpr int bandBarH = 40;
-        static constexpr int xoverH = 56;
         static constexpr int gateH = 112;
 
         static constexpr int defaultWidth = 920;
@@ -59,22 +58,26 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setupSlider (outputGainSlider, outputGainLabel, "Output", "dB");
     setupSlider (parallelGainSlider, parallelGainLabel, "Drive", "dB");
     setupSlider (mixSlider, mixLabel, "Mix", "%");
-    setupSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
-    setupSlider (reductionSlider, reductionLabel, "Reduction", "dB");
+    setupVerticalSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
+    setupVerticalSlider (reductionSlider, reductionLabel, "Reduction", "dB");
     setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms");
     addAndMakeVisible (flipButton);
     addAndMakeVisible (soloButton);
+    addAndMakeVisible (muteButton);
 
     addAndMakeVisible (fftSizeCB);
     addAndMakeVisible (fftSizeLabel);
-    fftSizeCB.addItemList (juce::StringArray { "256", "512", "1024", "2048", "4096" }, 1);
+    fftSizeCB.addItemList (juce::StringArray { "256", "512", "1024", "2048", "4096", "16384", "32768" }, 1);
     fftSizeLabel.setText ("FFT", juce::dontSendNotification);
     fftSizeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     fftSizeLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (latencyLabel);
+    latencyLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.78f));
+    latencyLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (numBandsCB);
     addAndMakeVisible (numBandsLabel);
-    numBandsCB.addItemList (juce::StringArray { "2", "3", "4", "5", "6" }, 1);
+    numBandsCB.addItemList (juce::StringArray { "1", "2", "3", "4", "5", "6" }, 1);
     numBandsLabel.setText ("Bands", juce::dontSendNotification);
     numBandsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     numBandsLabel.setJustificationType (juce::Justification::centredRight);
@@ -118,14 +121,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     soloButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::orange.withAlpha (0.85f));
     soloButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
     soloButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-
-    for (int i = 0; i < 5; ++i)
-    {
-        setupLinearSlider (crossoverSliders[(size_t) i], crossoverLabels[(size_t) i],
-                           "Xover " + juce::String (i + 1), " Hz");
-        crossoverAttachments[(size_t) i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            apvts, "CROSSOVER_" + juce::String (i), crossoverSliders[(size_t) i]);
-    }
+    muteButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::red.withAlpha (0.9f));
+    muteButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    muteButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
 
     inputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "INPUT_GAIN", inputGainSlider);
@@ -140,15 +138,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     numBandsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "NUM_BANDS", numBandsCB);
     rebuildGateSliderAttachments();
-    updateCrossoverSliderVisibility();
 
     apvts.addParameterListener ("NUM_BANDS", this);
     apvts.addParameterListener ("ACTIVE_BAND", this);
+    apvts.addParameterListener ("FFT_SIZE", this);
 
     addAndMakeVisible (spectrumViz);
 
     setSize (Layout::defaultWidth, Layout::defaultHeight);
     setResizeLimits (760, 540, 1600, 900);
+    updateLatencyLabel();
 }
 
 void PluginEditor::maybeShowUpdateInfoModalOnLaunch()
@@ -189,6 +188,7 @@ PluginEditor::~PluginEditor()
 {
     apvts.removeParameterListener ("NUM_BANDS", this);
     apvts.removeParameterListener ("ACTIVE_BAND", this);
+    apvts.removeParameterListener ("FFT_SIZE", this);
 }
 
 void PluginEditor::parameterChanged (const juce::String& parameterID, float)
@@ -196,12 +196,15 @@ void PluginEditor::parameterChanged (const juce::String& parameterID, float)
     if (parameterID == "NUM_BANDS")
     {
         syncActiveBandToNumBands();
-        updateCrossoverSliderVisibility();
         rebuildGateSliderAttachments();
     }
     else if (parameterID == "ACTIVE_BAND")
     {
         rebuildGateSliderAttachments();
+    }
+    else if (parameterID == "FFT_SIZE")
+    {
+        updateLatencyLabel();
     }
 }
 
@@ -229,6 +232,7 @@ void PluginEditor::rebuildGateSliderAttachments()
     smoothingAttachment.reset();
     flipAttachment.reset();
     soloAttachment.reset();
+    muteAttachment.reset();
 
     thresholdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "THRESHOLD", thresholdSlider);
@@ -240,17 +244,8 @@ void PluginEditor::rebuildGateSliderAttachments()
         apvts, pfx + "FLIP", flipButton);
     soloAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
         apvts, pfx + "SOLO", soloButton);
-}
-
-void PluginEditor::updateCrossoverSliderVisibility()
-{
-    const int nx = numBandsFromApvts (apvts) - 1;
-    for (int i = 0; i < 5; ++i)
-    {
-        const bool on = i < nx;
-        crossoverSliders[(size_t) i].setVisible (on);
-        crossoverLabels[(size_t) i].setVisible (on);
-    }
+    muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        apvts, pfx + "MUTE", muteButton);
 }
 
 void PluginEditor::paint (juce::Graphics& g)
@@ -288,7 +283,6 @@ void PluginEditor::paint (juce::Graphics& g)
     hairlineInNextGap (Layout::topKnobsH);
     hairlineInNextGap (Layout::spectrumH);
     hairlineInNextGap (Layout::bandBarH);
-    hairlineInNextGap (Layout::xoverH);
 }
 
 void PluginEditor::resized()
@@ -346,34 +340,26 @@ void PluginEditor::resized()
         auto fftBlock = bandRow.removeFromRight (lab + comboFixed);
         fftSizeLabel.setBounds (fftBlock.removeFromLeft (lab));
         fftSizeCB.setBounds (fftBlock.reduced (0, 6));
-    }
-
-    area.removeFromTop (Layout::gap);
-
-    auto xRow = area.removeFromTop (Layout::xoverH);
-    const int nx = 5;
-    const int xw = juce::jmax (56, (xRow.getWidth() - (nx - 1) * 4) / nx);
-    for (int i = 0; i < nx; ++i)
-    {
-        if (i > 0)
-            xRow.removeFromLeft (4);
-        crossoverSliders[(size_t) i].setBounds (xRow.removeFromLeft (xw).reduced (2, 4));
+        latencyLabel.setBounds (bandRow.reduced (6, 8));
     }
 
     area.removeFromTop (Layout::gap);
 
     auto gateRow = area.removeFromTop (Layout::gateH);
-    const int flipW = 80;
-    const int soloW = 80;
-    const int gateKnobWidth = juce::jmax (110, (gateRow.getWidth() - flipW - soloW - Layout::gap * 2) / 3);
+    const int flipW = 72;
+    const int soloW = 72;
+    const int muteW = 72;
+    const int gateKnobWidth = juce::jmax (92, (gateRow.getWidth() - flipW - soloW - muteW - Layout::gap * 3) / 3);
 
-    thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
-    reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
+    thresholdSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 4));
+    reductionSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 4));
     smoothingSlider.setBounds (gateRow.removeFromLeft (gateKnobWidth).reduced (10, 8));
     gateRow.removeFromLeft (Layout::gap);
     flipButton.setBounds (gateRow.removeFromLeft (flipW).withSizeKeepingCentre (flipW, 24));
     gateRow.removeFromLeft (Layout::gap);
     soloButton.setBounds (gateRow.removeFromLeft (soloW).withSizeKeepingCentre (soloW, 24));
+    gateRow.removeFromLeft (Layout::gap);
+    muteButton.setBounds (gateRow.removeFromLeft (muteW).withSizeKeepingCentre (muteW, 24));
 
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (activationUI)
@@ -413,4 +399,31 @@ void PluginEditor::setupLinearSlider (juce::Slider& slider, juce::Label& label,
     label.setColour (juce::Label::textColourId, juce::Colours::white);
     label.setJustificationType (juce::Justification::centredLeft);
     label.attachToComponent (&slider, false);
+}
+
+void PluginEditor::setupVerticalSlider (juce::Slider& slider, juce::Label& label,
+                                        const juce::String& labelText, const juce::String& suffix)
+{
+    addAndMakeVisible (slider);
+    addAndMakeVisible (label);
+
+    slider.setSliderStyle (juce::Slider::LinearVertical);
+    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 20);
+    slider.setTextValueSuffix (" " + suffix);
+    slider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
+
+    label.setText (labelText, juce::dontSendNotification);
+    label.setColour (juce::Label::textColourId, juce::Colours::white);
+    label.setJustificationType (juce::Justification::centred);
+    label.attachToComponent (&slider, false);
+}
+
+void PluginEditor::updateLatencyLabel()
+{
+    const int latencySamples = processorRef.getLatencySamples();
+    const double sr = processorRef.getSampleRate();
+    const double latencyMs = (sr > 1.0) ? (1000.0 * (double) latencySamples / sr) : 0.0;
+    latencyLabel.setText ("Latency: " + juce::String (latencySamples) + " smp / "
+                              + juce::String (latencyMs, 2) + " ms",
+                          juce::dontSendNotification);
 }
