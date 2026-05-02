@@ -324,6 +324,8 @@ void RelayDelayCore::resetInternalBuffersOnly() noexcept
     feedbackSmooth.snapToTargetValue();
     relayMixSmooth.snapToTargetValue();
     injectorSmooth.snapToTargetValue();
+    inputSendSmooth.snapToTargetValue();
+    feedbackTrimSmooth.snapToTargetValue();
     ottAmountSmooth.snapToTargetValue();
 
     flutterPhase = 0.f;
@@ -407,10 +409,14 @@ void RelayDelayCore::prepare (const juce::dsp::ProcessSpec& spec)
     feedbackSmooth.prepare (sampleRate, 85.f);
     relayMixSmooth.prepare (sampleRate, 145.f);
     injectorSmooth.prepare (sampleRate, 110.f);
+    inputSendSmooth.prepare (sampleRate, 95.f);
+    feedbackTrimSmooth.prepare (sampleRate, 90.f);
     ottAmountSmooth.prepare (sampleRate, 240.f);
 
     lastRt.enabled = false;
     lastRt.feedback = 0.45f;
+    lastRt.sendPercent = 100.f;
+    lastRt.feedbackTrimPercent = 100.f;
     lastRt.loopHpfHz = 95.f;
     lastRt.loopLpfHz = 12500.f;
     lastRt.ottAmountPct = 0.f;
@@ -430,6 +436,8 @@ void RelayDelayCore::prepare (const juce::dsp::ProcessSpec& spec)
 
     relayMixSmooth.reset (Utils::DSPUtils::percentageToNormalized (lastRt.mixPercent));
     injectorSmooth.reset (Utils::DSPUtils::dbToGain (lastRt.inputGainDb));
+    inputSendSmooth.reset (juce::jlimit (0.f, 1.f, lastRt.sendPercent * 0.01f));
+    feedbackTrimSmooth.reset (juce::jlimit (0.f, 1.5f, lastRt.feedbackTrimPercent * 0.01f));
     ottAmountSmooth.reset (juce::jlimit (0.f, 1.f, lastRt.ottAmountPct * 0.01f));
 
     const float targMsInit = computeTargetDelayMs (lastRt);
@@ -491,6 +499,8 @@ void RelayDelayCore::setTargets (const RelayRuntimeParams& p) noexcept
 
     injectorSmooth.setTargetValue (Utils::DSPUtils::dbToGain (p.inputGainDb));
     relayMixSmooth.setTargetValue (Utils::DSPUtils::percentageToNormalized (p.mixPercent));
+    inputSendSmooth.setTargetValue (juce::jlimit (0.f, 1.f, p.sendPercent * 0.01f));
+    feedbackTrimSmooth.setTargetValue (juce::jlimit (0.f, 1.5f, p.feedbackTrimPercent * 0.01f));
     ottAmountSmooth.setTargetValue (juce::jlimit (0.f, 1.f, p.ottAmountPct * 0.01f));
 
     cachedRoundTripMs = targMs + computeDiffuseExtraMs();
@@ -512,10 +522,12 @@ void RelayDelayCore::processStereoSample (float inL, float inR, float& outL, flo
         return;
     }
 
-    const float fb = feedbackSmooth.getNextValue();
+    const float fbRaw = feedbackSmooth.getNextValue();
+    const float fbTrim = feedbackTrimSmooth.getNextValue();
+    const float fb = juce::jmin (fbRaw * fbTrim, 0.99f);
     const float dlySamps = delaySamplesSmooth.getNextValue();
     const float relayMixAbs = relayMixSmooth.getNextValue();
-    const float injGain = injectorSmooth.getNextValue();
+    const float injGain = injectorSmooth.getNextValue() * inputSendSmooth.getNextValue();
     const float ottAmtStep = ottAmountSmooth.getNextValue();
 
     advanceModPhases();

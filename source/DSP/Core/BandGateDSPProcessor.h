@@ -239,10 +239,18 @@ namespace DSP {
                         {
                             float obL {}, obR {};
 
-                            relayBands[(size_t) b].processStereoSample (gatedL,
-                                                                        gatedR,
-                                                                        obL,
-                                                                        obR);
+                            if (relayBands[(size_t) b].isRelayEnabled())
+                            {
+                                relayBands[(size_t) b].processStereoSample (gatedL,
+                                                                            gatedR,
+                                                                            obL,
+                                                                            obR);
+                            }
+                            else
+                            {
+                                obL = gatedL;
+                                obR = gatedR;
+                            }
 
                             if (audible)
                             {

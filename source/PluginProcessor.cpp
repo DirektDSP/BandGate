@@ -85,8 +85,10 @@ namespace
             r.timeMs = v ("TIME_MS");
             r.syncDivIndex = static_cast<int> (v ("TIME_SYNC_DIV"));
             r.feedback = v ("FEEDBACK");
+            r.feedbackTrimPercent = v ("FEEDBACK_TRIM");
             r.inputGainDb = v ("INPUT_GAIN");
             r.mixPercent = v ("MIX");
+            r.sendPercent = v ("SEND");
             r.diffusionMs = v ("DIFFUSION_TIME");
             r.dampingPct = v ("DAMPING");
             r.loopHpfHz = v ("LOOP_HPF");

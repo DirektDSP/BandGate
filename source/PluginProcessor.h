@@ -155,6 +155,12 @@ public:
                 juce::NormalisableRange<float> { 0.0f, 1.55f }, 0.45f));
 
             params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "FEEDBACK_TRIM", 2 },
+                juce::String ("Band ") + bandStr + " Relay Feedback Trim",
+                juce::NormalisableRange<float> { 0.0f, 150.0f, 0.1f }, 100.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
                 juce::ParameterID { rfx + "INPUT_GAIN", 2 },
                 juce::String ("Band ") + bandStr + " Relay Input",
                 juce::NormalisableRange<float> { -36.0f, 36.0f, 0.1f }, 0.0f,
@@ -164,6 +170,12 @@ public:
                 juce::ParameterID { rfx + "MIX", 2 },
                 juce::String ("Band ") + bandStr + " Relay Mix",
                 juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 50.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "SEND", 2 },
+                juce::String ("Band ") + bandStr + " Relay Send",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 100.0f,
                 juce::AudioParameterFloatAttributes().withLabel ("%")));
 
             params.push_back (std::make_unique<juce::AudioParameterFloat> (

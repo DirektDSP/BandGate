@@ -32,6 +32,11 @@ struct RelayRuntimeParams
     float ottAmountPct = 0.f;
     float ottTimeMs = 135.f;
 
+    /** 0–100 %: scales new audio into delay summing node only (feedback unchanged). */
+    float sendPercent = 100.f;
+    /** 0–150 %: multiplier on feedback gain (100 % = unity). */
+    float feedbackTrimPercent = 100.f;
+
     float flutterRateHz = 1.75f;
     float flutterDepthPct = 15.f;
 
@@ -53,6 +58,7 @@ public:
     void processStereoSample (float inL, float inR, float& outL, float& outR) noexcept;
 
     [[nodiscard]] bool isPrepared() const noexcept { return prepared; }
+    [[nodiscard]] bool isRelayEnabled() const noexcept { return prepared && lastRt.enabled; }
     [[nodiscard]] uint32_t getClearGeneration() const noexcept { return clearGeneration; }
 
     /** Display / UI: delay time + coarse diffuser smear (ms). */
@@ -114,6 +120,8 @@ private:
     Utils::ParameterSmoother<float> feedbackSmooth;
     Utils::ParameterSmoother<float> relayMixSmooth;
     Utils::ParameterSmoother<float> injectorSmooth;
+    Utils::ParameterSmoother<float> inputSendSmooth;
+    Utils::ParameterSmoother<float> feedbackTrimSmooth;
     Utils::ParameterSmoother<float> ottAmountSmooth;
 
     float flutterPhase = 0.f;

@@ -12,6 +12,7 @@ namespace juce
 class PluginProcessor;
 
 class SpectrumVisualizer : public juce::Component,
+                           public juce::SettableTooltipClient,
                            private juce::Timer
 {
 public:

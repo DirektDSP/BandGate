@@ -29,7 +29,10 @@ namespace
 
 //==============================================================================
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (&p), processorRef (p), apvts (p.getApvts())
+    : AudioProcessorEditor (&p),
+      processorRef (p),
+      apvts (p.getApvts()),
+      tooltipWindow (this, 450)
 {
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (processorRef.moonbaseClient != nullptr)
@@ -46,6 +49,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     #ifdef JUCE_DEBUG
         addAndMakeVisible (inspectButton);
+        inspectButton.setTooltip ("Open Melatonin Inspector (debug builds): browse component hierarchy and layout.");
         inspectButton.onClick = [&] {
             if (!inspector)
             {
@@ -56,41 +60,80 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         };
     #endif
 
-    setupSlider (inputGainSlider, inputGainLabel, "Input", "dB");
-    setupSlider (outputGainSlider, outputGainLabel, "Output", "dB");
-    setupSlider (parallelGainSlider, parallelGainLabel, "Drive", "dB");
-    setupSlider (mixSlider, mixLabel, "Mix", "%");
-    setupVerticalSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
-    setupVerticalSlider (reductionSlider, reductionLabel, "Reduction", "dB");
-    setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms");
+    setupSlider (inputGainSlider, inputGainLabel, "Input", "dB",
+                   "Gain before the multiband crossover and gates. Use it to match incoming level; "
+                   "louder input pushes each band harder into threshold and timing-dependent behaviour.");
+    setupSlider (outputGainSlider, outputGainLabel, "Output", "dB",
+                   "Gain after the global wet/dry mix. Final level trim; does not change how gates see the signal.");
+    setupSlider (parallelGainSlider, parallelGainLabel, "Drive", "dB",
+                   "Drive into the processor before the multiband split. Adds level going into gates and relay; "
+                   "the output stage scales inversely so this is more colour/behaviour than raw loudness.");
+    setupSlider (mixSlider, mixLabel, "Mix", "%",
+                   "Blend of processed multiband output (wet) vs latency-matched dry input. "
+                   "100% is full effect; lower values mix in clean signal.");
+    setupVerticalSlider (thresholdSlider, thresholdLabel, "Threshold", "dB",
+                          "Spectral gate threshold for the active band (dBFS-style scale). "
+                          "When band energy falls below this, the gate applies reduction toward the Reduction amount.");
+    setupVerticalSlider (reductionSlider, reductionLabel, "Reduction", "dB",
+                          "Maximum attenuation when the gate is fully closed. More negative = deeper cut when below threshold.");
+    setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms",
+                   "Time constant for gate gain smoothing. Higher values slow down opens and closes for fewer clicks; "
+                   "lower values react faster but can sound snappier or zippery.");
 
-    setupSlider (relayTimeSlider, relayTimeLabel, "Delay", "ms");
+    setupSlider (relayTimeSlider, relayTimeLabel, "Delay", "ms",
+                   "Main delay length in milliseconds when Delay mode is Free. "
+                   "The effective echo spacing also includes diffusion smearing; see Relay RT display.");
     relayTimeSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 58, 16);
-    setupSlider (relayFeedbackSlider, relayFeedbackLabel, "Rly FB", {});
+    setupSlider (relayFeedbackSlider, relayFeedbackLabel, "Rly FB", {},
+                   "Feedback around the relay path (diffusion, damping, loop filters, OTT). "
+                   "Values above 100% are allowed for bloom; internal limiting keeps the loop stable.");
     relayFeedbackSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
-    setupSlider (relayInputGainSlider, relayInputGainLabel, "Rly in", "dB");
+    setupSlider (relayFbTrimSlider, relayFbTrimLabel, "FB tr", "%",
+                   "Fine trim on top of Relay FB. 100% is unity; lower calms ringing or long tails, "
+                   "higher adds density. Combined feedback is capped internally for safety.");
+    relayFbTrimSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 16);
+    setupSlider (relayInputGainSlider, relayInputGainLabel, "Rly in", "dB",
+                   "Gain on new audio entering the delay summing node. Higher pushes new material into the loop; "
+                   "does not change the wet/dry blend (use Relay mix for that).");
     relayInputGainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayMixSlider, relayMixLabel, "Rly mx", "%");
+    setupSlider (relaySendSlider, relaySendLabel, "Send", "%",
+                   "How much of the gated band is injected into the delay line input. At 0%, no new audio enters "
+                   "the loop while existing tails still decay; at 100%, full band feeds the relay.");
+    relaySendSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 16);
+    setupSlider (relayMixSlider, relayMixLabel, "Rly mx", "%",
+                   "Per-band wet/dry for the relay: processed delay tap vs dry gated band for that band only.");
     relayMixSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
-    setupSlider (relayDiffusionSlider, relayDiffusionLabel, "Smear", "ms");
+    setupSlider (relayDiffusionSlider, relayDiffusionLabel, "Smear", "ms",
+                   "Short diffusion network in the feedback path. Longer times blur transients and smear repeats; "
+                   "minimum delay is raised slightly so echoes do not collapse to zero time.");
     relayDiffusionSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
-    setupSlider (relayDampingSlider, relayDampingLabel, "Tone", "%");
+    setupSlider (relayDampingSlider, relayDampingLabel, "Tone", "%",
+                   "Darkening inside the diffusion stage (steep low-pass character). Higher = duller, softer repeats.");
     relayDampingSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
-    setupSlider (relayFlutterRateSlider, relayFlutterRateLabel, "Fl.Rt", "Hz");
+    setupSlider (relayFlutterRateSlider, relayFlutterRateLabel, "Fl.Rt", "Hz",
+                   "Speed of slow modulation on diffuser allpass coefficients. Breaks up metallic resonances.");
     relayFlutterRateSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayFlutterDepthSlider, relayFlutterDepthLabel, "Fl.Dp", "%");
+    setupSlider (relayFlutterDepthSlider, relayFlutterDepthLabel, "Fl.Dp", "%",
+                   "How far flutter modulates the diffuser. Subtle values often sound most musical.");
     relayFlutterDepthSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayChorusRateSlider, relayChorusRateLabel, "Ch.Rt", "Hz");
+    setupSlider (relayChorusRateSlider, relayChorusRateLabel, "Ch.Rt", "Hz",
+                   "Chorus LFO rate on the delay output tap (after diffusion).");
     relayChorusRateSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayChorusDepthSlider, relayChorusDepthLabel, "Ch.Dp", "%");
+    setupSlider (relayChorusDepthSlider, relayChorusDepthLabel, "Ch.Dp", "%",
+                   "Chorus depth on the tap: blend of modulated short delay vs the dry tap. Shallow keeps pitch centre.");
     relayChorusDepthSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayLoopHpfSlider, relayLoopHpfLabel, "Loop HPF", "Hz");
+    setupSlider (relayLoopHpfSlider, relayLoopHpfLabel, "Loop HPF", "Hz",
+                   "12 dB/oct high-pass in the feedback loop. Cuts mud and sub build-up in repeats.");
     relayLoopHpfSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayLoopLpfSlider, relayLoopLpfLabel, "Loop LPF", "Hz");
+    setupSlider (relayLoopLpfSlider, relayLoopLpfLabel, "Loop LPF", "Hz",
+                   "12 dB/oct low-pass in the feedback loop. Darkens each round for tape-like decay.");
     relayLoopLpfSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
-    setupSlider (relayOttAmountSlider, relayOttAmountLabel, "OTT", "%");
+    setupSlider (relayOttAmountSlider, relayOttAmountLabel, "OTT", "%",
+                   "Multiband OTT-style dynamics in the loop: expands/compresses bands to thicken tails without "
+                   "only cranking feedback.");
     relayOttAmountSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
-    setupSlider (relayOttTimeSlider, relayOttTimeLabel, "OTT t", "ms");
+    setupSlider (relayOttTimeSlider, relayOttTimeLabel, "OTT t", "ms",
+                   "Attack/release feel for the OTT envelopes. Lower = snappier band pumping; higher = smoother swell.");
     relayOttTimeSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
 
     addAndMakeVisible (relayEnableButton);
@@ -98,6 +141,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     relayEnableButton.setClickingTogglesState (true);
     relayClearButton.setClickingTogglesState (true);
     relayEnableButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::aquamarine.withAlpha (0.55f));
+    relayEnableButton.setTooltip ("Enables the relay delay for the band you are editing (Active band). "
+                                  "Each band can have its own relay settings.");
+    relayClearButton.setTooltip ("Clears delay feedback buffers on all bands (momentary / latch per host). "
+                                 "Stops tails without changing parameter values.");
 
     addAndMakeVisible (relayTimeModeCB);
     addAndMakeVisible (relayTimeModeLabel);
@@ -113,6 +160,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                 1);
     relaySyncDivLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     relaySyncDivLabel.setJustificationType (juce::Justification::centredRight);
+    relayTimeModeCB.setTooltip ("Free: delay time follows the Delay slider in milliseconds. "
+                                "Sync: time follows host tempo and the Grid division.");
+    relayTimeModeLabel.setTooltip (relayTimeModeCB.getTooltip());
+    relaySyncDivCB.setTooltip ("Musical note length for synced delay (fractions of a bar / beat). "
+                                 "Only applies when Delay mode is Sync and the host reports a valid BPM.");
+    relaySyncDivLabel.setTooltip (relaySyncDivCB.getTooltip());
 
     addAndMakeVisible (flipButton);
     addAndMakeVisible (soloButton);
@@ -124,6 +177,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     fftSizeLabel.setText ("FFT", juce::dontSendNotification);
     fftSizeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     fftSizeLabel.setJustificationType (juce::Justification::centredRight);
+    fftSizeCB.setTooltip ("FFT length for spectral gating. Larger windows give finer frequency resolution but add "
+                          "latency and CPU load; smaller windows react faster in time.");
+    fftSizeLabel.setTooltip (fftSizeCB.getTooltip());
     addAndMakeVisible (latencyLabel);
     latencyLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.78f));
     latencyLabel.setJustificationType (juce::Justification::centredLeft);
@@ -137,6 +193,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     numBandsLabel.setText ("Bands", juce::dontSendNotification);
     numBandsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     numBandsLabel.setJustificationType (juce::Justification::centredRight);
+    numBandsCB.setTooltip ("Number of crossover bands (1–6). More bands = more independent gates and relay paths; "
+                           "crossover frequencies set where bands split.");
+    numBandsLabel.setTooltip (numBandsCB.getTooltip());
 
     addAndMakeVisible (spectrumMinDbCB);
     addAndMakeVisible (spectrumMinDbLabel);
@@ -173,6 +232,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     spectrumMaxDbLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     spectrumMaxDbLabel.setJustificationType (juce::Justification::centredRight);
     spectrumViz.setVerticalDbRange (-96.0f, 24.0f);
+    spectrumMinDbCB.setTooltip ("Lower bound of the spectrum display in dB (visual only; does not affect audio).");
+    spectrumMinDbLabel.setTooltip (spectrumMinDbCB.getTooltip());
+    spectrumMaxDbCB.setTooltip ("Upper bound of the spectrum display in dB (visual only; does not affect audio).");
+    spectrumMaxDbLabel.setTooltip (spectrumMaxDbCB.getTooltip());
 
     soloButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::orange.withAlpha (0.85f));
     soloButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
@@ -180,6 +243,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     muteButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::red.withAlpha (0.9f));
     muteButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
     muteButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    flipButton.setTooltip ("Inverts gate behaviour for the active band (open vs closed logic swap).");
+    soloButton.setTooltip ("Solo the active band: other bands are muted at the sum unless they are also soloed.");
+    muteButton.setTooltip ("Mutes the active band at the output sum.");
 
     inputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "INPUT_GAIN", inputGainSlider);
@@ -206,11 +272,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     apvts.addParameterListener ("FFT_SIZE", this);
 
     addAndMakeVisible (spectrumViz);
+    spectrumViz.setTooltip ("Spectral overview and per-band gating. Vertical range controls are display-only.");
 
     setSize (Layout::defaultWidth, Layout::defaultHeight);
     setResizeLimits (760, 780, 1600, 1100);
     updateLatencyLabel();
     updateRelayRoundTripLabel();
+    latencyLabel.setTooltip ("Plugin latency in samples and milliseconds (spectral gate / FFT path). "
+                             "Dry path is delayed internally to time-align with the wet signal.");
+    relayRoundTripLabel.setTooltip ("Estimated relay echo period for the edited band when relay is on: "
+                                    "delay time plus diffusion smear. Off shows “--”.");
     startTimerHz (15);
 }
 
@@ -339,7 +410,9 @@ void PluginEditor::rebuildRelayAttachments()
     relaySyncDivAttachment.reset();
     relayTimeAttachment.reset();
     relayFeedbackAttachment.reset();
+    relayFbTrimAttachment.reset();
     relayInputGainAttachment.reset();
+    relaySendAttachment.reset();
     relayMixAttachment.reset();
     relayDiffusionAttachment.reset();
     relayDampingAttachment.reset();
@@ -363,8 +436,12 @@ void PluginEditor::rebuildRelayAttachments()
         apvts, pfx + "TIME_MS", relayTimeSlider);
     relayFeedbackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "FEEDBACK", relayFeedbackSlider);
+    relayFbTrimAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "FEEDBACK_TRIM", relayFbTrimSlider);
     relayInputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "INPUT_GAIN", relayInputGainSlider);
+    relaySendAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "SEND", relaySendSlider);
     relayMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, pfx + "MIX", relayMixSlider);
     relayDiffusionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -537,17 +614,19 @@ void PluginEditor::resized()
         }
         rr1.removeFromLeft (4);
 
-        const int rk = juce::jmax (64, rr1.getWidth() / 3);
+        const int rk = juce::jmax (56, rr1.getWidth() / 4);
         relayFeedbackSlider.setBounds (rr1.removeFromLeft (rk).reduced (4, 2));
+        relayFbTrimSlider.setBounds (rr1.removeFromLeft (rk).reduced (4, 2));
         relayMixSlider.setBounds (rr1.removeFromLeft (rk).reduced (4, 2));
         relayDiffusionSlider.setBounds (rr1.reduced (4, 2));
 
         relayBulk.removeFromTop (Layout::gap);
         auto rr2 = relayBulk.reduced (6, 4);
-        constexpr int nk = 11;
-        const int kw = juce::jmax (60, rr2.getWidth() / nk);
+        constexpr int nk = 12;
+        const int kw = juce::jmax (56, rr2.getWidth() / nk);
 
         relayInputGainSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relaySendSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
         relayDampingSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
         relayFlutterRateSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
         relayFlutterDepthSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
@@ -566,7 +645,8 @@ void PluginEditor::resized()
 }
 
 void PluginEditor::setupSlider (juce::Slider& slider, juce::Label& label,
-                                const juce::String& labelText, const juce::String& suffix)
+                                const juce::String& labelText, const juce::String& suffix,
+                                const juce::String& tooltip)
 {
     addAndMakeVisible (slider);
     addAndMakeVisible (label);
@@ -580,10 +660,17 @@ void PluginEditor::setupSlider (juce::Slider& slider, juce::Label& label,
     label.setColour (juce::Label::textColourId, juce::Colours::white);
     label.setJustificationType (juce::Justification::centred);
     label.attachToComponent (&slider, false);
+
+    if (tooltip.isNotEmpty())
+    {
+        slider.setTooltip (tooltip);
+        label.setTooltip (tooltip);
+    }
 }
 
 void PluginEditor::setupLinearSlider (juce::Slider& slider, juce::Label& label,
-                                      const juce::String& labelText, const juce::String& suffix)
+                                      const juce::String& labelText, const juce::String& suffix,
+                                      const juce::String& tooltip)
 {
     addAndMakeVisible (slider);
     addAndMakeVisible (label);
@@ -597,10 +684,17 @@ void PluginEditor::setupLinearSlider (juce::Slider& slider, juce::Label& label,
     label.setColour (juce::Label::textColourId, juce::Colours::white);
     label.setJustificationType (juce::Justification::centredLeft);
     label.attachToComponent (&slider, false);
+
+    if (tooltip.isNotEmpty())
+    {
+        slider.setTooltip (tooltip);
+        label.setTooltip (tooltip);
+    }
 }
 
 void PluginEditor::setupVerticalSlider (juce::Slider& slider, juce::Label& label,
-                                        const juce::String& labelText, const juce::String& suffix)
+                                        const juce::String& labelText, const juce::String& suffix,
+                                        const juce::String& tooltip)
 {
     addAndMakeVisible (slider);
     addAndMakeVisible (label);
@@ -614,6 +708,12 @@ void PluginEditor::setupVerticalSlider (juce::Slider& slider, juce::Label& label
     label.setColour (juce::Label::textColourId, juce::Colours::white);
     label.setJustificationType (juce::Justification::centred);
     label.attachToComponent (&slider, false);
+
+    if (tooltip.isNotEmpty())
+    {
+        slider.setTooltip (tooltip);
+        label.setTooltip (tooltip);
+    }
 }
 
 void PluginEditor::updateLatencyLabel()

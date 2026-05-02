@@ -37,6 +37,9 @@ private:
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;
 
+    /** Hosts need a TooltipWindow in the hierarchy for setTooltip() to show. */
+    juce::TooltipWindow tooltipWindow;
+
     SpectrumVisualizer spectrumViz { processorRef };
 
     juce::TextButton inspectButton { "Inspect the UI" };
@@ -60,14 +63,16 @@ private:
 
     juce::Label inputGainLabel, outputGainLabel, parallelGainLabel, mixLabel;
     juce::Label thresholdLabel, reductionLabel, smoothingLabel;
-    juce::Slider relayTimeSlider, relayFeedbackSlider, relayInputGainSlider, relayMixSlider;
+    juce::Slider relayTimeSlider, relayFeedbackSlider, relayFbTrimSlider, relayInputGainSlider,
+        relaySendSlider, relayMixSlider;
     juce::Slider relayDiffusionSlider, relayDampingSlider;
     juce::Slider relayFlutterRateSlider, relayFlutterDepthSlider;
     juce::Slider relayChorusRateSlider, relayChorusDepthSlider;
     juce::Slider relayLoopHpfSlider, relayLoopLpfSlider;
     juce::Slider relayOttAmountSlider, relayOttTimeSlider;
 
-    juce::Label relayTimeLabel, relayFeedbackLabel, relayInputGainLabel, relayMixLabel;
+    juce::Label relayTimeLabel, relayFeedbackLabel, relayFbTrimLabel, relayInputGainLabel,
+        relaySendLabel, relayMixLabel;
     juce::Label relayDiffusionLabel, relayDampingLabel;
     juce::Label relayFlutterRateLabel, relayFlutterDepthLabel;
     juce::Label relayChorusRateLabel, relayChorusDepthLabel;
@@ -100,7 +105,9 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayTimeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayFeedbackAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayFbTrimAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayInputGainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relaySendAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayMixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayDiffusionAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayDampingAttachment;
@@ -113,9 +120,21 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayOttAmountAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayOttTimeAttachment;
 
-    void setupSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
-    void setupLinearSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
-    void setupVerticalSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
+    void setupSlider (juce::Slider& slider,
+                      juce::Label& label,
+                      const juce::String& labelText,
+                      const juce::String& suffix,
+                      const juce::String& tooltip = {});
+    void setupLinearSlider (juce::Slider& slider,
+                            juce::Label& label,
+                            const juce::String& labelText,
+                            const juce::String& suffix,
+                            const juce::String& tooltip = {});
+    void setupVerticalSlider (juce::Slider& slider,
+                              juce::Label& label,
+                              const juce::String& labelText,
+                              const juce::String& suffix,
+                              const juce::String& tooltip = {});
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

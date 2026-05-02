@@ -42,3 +42,20 @@ TEST_CASE ("RelayDelayCore prepare does not bump clear generation", "[relay]")
     core.prepare (spec);
     REQUIRE (core.getClearGeneration() == g);
 }
+
+TEST_CASE ("RelayDelayCore isRelayEnabled tracks setTargets", "[relay]")
+{
+    RelayDelayCore core;
+    core.prepare ({ 48000.0, 256, 2 });
+    REQUIRE_FALSE (core.isRelayEnabled());
+
+    RelayRuntimeParams on {};
+    on.enabled = true;
+    core.setTargets (on);
+    REQUIRE (core.isRelayEnabled());
+
+    RelayRuntimeParams off {};
+    off.enabled = false;
+    core.setTargets (off);
+    REQUIRE_FALSE (core.isRelayEnabled());
+}
