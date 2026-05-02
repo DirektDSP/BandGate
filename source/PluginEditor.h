@@ -14,7 +14,8 @@
 #endif
 
 class PluginEditor : public juce::AudioProcessorEditor,
-                     private juce::AudioProcessorValueTreeState::Listener
+                     private juce::AudioProcessorValueTreeState::Listener,
+                     private juce::Timer
 {
 public:
     explicit PluginEditor (PluginProcessor&);
@@ -25,10 +26,13 @@ public:
 
 private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void timerCallback() override;
     void rebuildGateSliderAttachments();
+    void rebuildRelayAttachments();
     void syncActiveBandToNumBands();
     void maybeShowUpdateInfoModalOnLaunch();
     void updateLatencyLabel();
+    void updateRelayRoundTripLabel();
 
     PluginProcessor& processorRef;
     AudioProcessorValueTreeState& apvts;
@@ -47,13 +51,34 @@ private:
     juce::ToggleButton flipButton { "Flip" };
     juce::ToggleButton soloButton { "Solo" };
     juce::ToggleButton muteButton { "Mute" };
+    juce::ToggleButton relayEnableButton { "Relay on" };
+    juce::ToggleButton relayClearButton { "Clr tails" };
+    juce::ComboBox relayTimeModeCB;
+    juce::ComboBox relaySyncDivCB;
     juce::ComboBox fftSizeCB;
     juce::ComboBox numBandsCB, spectrumMinDbCB, spectrumMaxDbCB;
 
     juce::Label inputGainLabel, outputGainLabel, parallelGainLabel, mixLabel;
     juce::Label thresholdLabel, reductionLabel, smoothingLabel;
+    juce::Slider relayTimeSlider, relayFeedbackSlider, relayInputGainSlider, relayMixSlider;
+    juce::Slider relayDiffusionSlider, relayDampingSlider;
+    juce::Slider relayFlutterRateSlider, relayFlutterDepthSlider;
+    juce::Slider relayChorusRateSlider, relayChorusDepthSlider;
+    juce::Slider relayLoopHpfSlider, relayLoopLpfSlider;
+    juce::Slider relayOttAmountSlider, relayOttTimeSlider;
+
+    juce::Label relayTimeLabel, relayFeedbackLabel, relayInputGainLabel, relayMixLabel;
+    juce::Label relayDiffusionLabel, relayDampingLabel;
+    juce::Label relayFlutterRateLabel, relayFlutterDepthLabel;
+    juce::Label relayChorusRateLabel, relayChorusDepthLabel;
+    juce::Label relayLoopHpfLabel, relayLoopLpfLabel;
+    juce::Label relayOttAmountLabel, relayOttTimeLabel;
+    juce::Label relayTimeModeLabel { {}, "Dly mode" };
+    juce::Label relaySyncDivLabel { {}, "Grid" };
+
     juce::Label fftSizeLabel, numBandsLabel, spectrumMinDbLabel, spectrumMaxDbLabel;
     juce::Label latencyLabel;
+    juce::Label relayRoundTripLabel;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
@@ -67,6 +92,26 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> numBandsAttachment;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> relayEnableAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> relayClearAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> relayTimeModeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> relaySyncDivAttachment;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayTimeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayFeedbackAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayInputGainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayMixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayDiffusionAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayDampingAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayFlutterRateAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayFlutterDepthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayChorusRateAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayChorusDepthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayLoopHpfAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayLoopLpfAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayOttAmountAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> relayOttTimeAttachment;
 
     void setupSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);
     void setupLinearSlider (juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix);

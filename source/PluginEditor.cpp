@@ -17,11 +17,13 @@ namespace
         static constexpr int gap = 8;
         static constexpr int topKnobsH = 92;
         static constexpr int spectrumH = 200;
-        static constexpr int bandBarH = 40;
+        static constexpr int bandBarH = 48;
         static constexpr int gateH = 112;
+        static constexpr int relayRowH = 118;
+        static constexpr int relayH = relayRowH * 2 + gap;
 
         static constexpr int defaultWidth = 920;
-        static constexpr int defaultHeight = 620;
+        static constexpr int defaultHeight = 628 + relayH;
     };
 } // namespace
 
@@ -61,6 +63,57 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setupVerticalSlider (thresholdSlider, thresholdLabel, "Threshold", "dB");
     setupVerticalSlider (reductionSlider, reductionLabel, "Reduction", "dB");
     setupSlider (smoothingSlider, smoothingLabel, "Smoothing", "ms");
+
+    setupSlider (relayTimeSlider, relayTimeLabel, "Delay", "ms");
+    relayTimeSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 58, 16);
+    setupSlider (relayFeedbackSlider, relayFeedbackLabel, "Rly FB", {});
+    relayFeedbackSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+    setupSlider (relayInputGainSlider, relayInputGainLabel, "Rly in", "dB");
+    relayInputGainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayMixSlider, relayMixLabel, "Rly mx", "%");
+    relayMixSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+    setupSlider (relayDiffusionSlider, relayDiffusionLabel, "Smear", "ms");
+    relayDiffusionSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+    setupSlider (relayDampingSlider, relayDampingLabel, "Tone", "%");
+    relayDampingSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+    setupSlider (relayFlutterRateSlider, relayFlutterRateLabel, "Fl.Rt", "Hz");
+    relayFlutterRateSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayFlutterDepthSlider, relayFlutterDepthLabel, "Fl.Dp", "%");
+    relayFlutterDepthSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayChorusRateSlider, relayChorusRateLabel, "Ch.Rt", "Hz");
+    relayChorusRateSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayChorusDepthSlider, relayChorusDepthLabel, "Ch.Dp", "%");
+    relayChorusDepthSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayLoopHpfSlider, relayLoopHpfLabel, "Loop HPF", "Hz");
+    relayLoopHpfSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayLoopLpfSlider, relayLoopLpfLabel, "Loop LPF", "Hz");
+    relayLoopLpfSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+    setupSlider (relayOttAmountSlider, relayOttAmountLabel, "OTT", "%");
+    relayOttAmountSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 16);
+    setupSlider (relayOttTimeSlider, relayOttTimeLabel, "OTT t", "ms");
+    relayOttTimeSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 54, 16);
+
+    addAndMakeVisible (relayEnableButton);
+    addAndMakeVisible (relayClearButton);
+    relayEnableButton.setClickingTogglesState (true);
+    relayClearButton.setClickingTogglesState (true);
+    relayEnableButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::aquamarine.withAlpha (0.55f));
+
+    addAndMakeVisible (relayTimeModeCB);
+    addAndMakeVisible (relayTimeModeLabel);
+    relayTimeModeCB.addItemList (juce::StringArray { "Free", "Sync" }, 1);
+    relayTimeModeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    relayTimeModeLabel.setJustificationType (juce::Justification::centredRight);
+
+    addAndMakeVisible (relaySyncDivCB);
+    addAndMakeVisible (relaySyncDivLabel);
+    relaySyncDivCB.addItemList (juce::StringArray {
+                                    "1/32", "1/16", "1/8", "1/8 dot", "1/4 tri", "1/4", "1/4 dot", "1/2 tri",
+                                    "1/2", "1/2 dot", "1 bar", "2 bar", "4 bar" },
+                                1);
+    relaySyncDivLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    relaySyncDivLabel.setJustificationType (juce::Justification::centredRight);
+
     addAndMakeVisible (flipButton);
     addAndMakeVisible (soloButton);
     addAndMakeVisible (muteButton);
@@ -74,6 +127,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (latencyLabel);
     latencyLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.78f));
     latencyLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (relayRoundTripLabel);
+    relayRoundTripLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.72f));
+    relayRoundTripLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (numBandsCB);
     addAndMakeVisible (numBandsLabel);
@@ -139,6 +195,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         apvts, "NUM_BANDS", numBandsCB);
     rebuildGateSliderAttachments();
 
+    relayClearAttachment =
+        std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            apvts, "RELAY_CLEAR", relayClearButton);
+
+    rebuildRelayAttachments();
+
     apvts.addParameterListener ("NUM_BANDS", this);
     apvts.addParameterListener ("ACTIVE_BAND", this);
     apvts.addParameterListener ("FFT_SIZE", this);
@@ -146,8 +208,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (spectrumViz);
 
     setSize (Layout::defaultWidth, Layout::defaultHeight);
-    setResizeLimits (760, 540, 1600, 900);
+    setResizeLimits (760, 780, 1600, 1100);
     updateLatencyLabel();
+    updateRelayRoundTripLabel();
+    startTimerHz (15);
 }
 
 void PluginEditor::maybeShowUpdateInfoModalOnLaunch()
@@ -186,6 +250,8 @@ void PluginEditor::maybeShowUpdateInfoModalOnLaunch()
 
 PluginEditor::~PluginEditor()
 {
+    stopTimer();
+
     apvts.removeParameterListener ("NUM_BANDS", this);
     apvts.removeParameterListener ("ACTIVE_BAND", this);
     apvts.removeParameterListener ("FFT_SIZE", this);
@@ -197,15 +263,28 @@ void PluginEditor::parameterChanged (const juce::String& parameterID, float)
     {
         syncActiveBandToNumBands();
         rebuildGateSliderAttachments();
+        rebuildRelayAttachments();
+        updateRelayRoundTripLabel();
     }
     else if (parameterID == "ACTIVE_BAND")
     {
         rebuildGateSliderAttachments();
+        rebuildRelayAttachments();
+        updateRelayRoundTripLabel();
     }
     else if (parameterID == "FFT_SIZE")
     {
         updateLatencyLabel();
     }
+    else if (parameterID.startsWith ("BAND") && parameterID.contains ("_RELAY_"))
+    {
+        updateRelayRoundTripLabel();
+    }
+}
+
+void PluginEditor::timerCallback()
+{
+    updateRelayRoundTripLabel();
 }
 
 void PluginEditor::syncActiveBandToNumBands()
@@ -248,6 +327,68 @@ void PluginEditor::rebuildGateSliderAttachments()
         apvts, pfx + "MUTE", muteButton);
 }
 
+void PluginEditor::rebuildRelayAttachments()
+{
+    const int band = juce::jlimit (
+        0, PluginProcessor::kMaxBands - 1,
+        static_cast<int> (*apvts.getRawParameterValue ("ACTIVE_BAND")));
+    const juce::String pfx = "BAND" + juce::String (band) + "_RELAY_";
+
+    relayEnableAttachment.reset();
+    relayTimeModeAttachment.reset();
+    relaySyncDivAttachment.reset();
+    relayTimeAttachment.reset();
+    relayFeedbackAttachment.reset();
+    relayInputGainAttachment.reset();
+    relayMixAttachment.reset();
+    relayDiffusionAttachment.reset();
+    relayDampingAttachment.reset();
+    relayFlutterRateAttachment.reset();
+    relayFlutterDepthAttachment.reset();
+    relayChorusRateAttachment.reset();
+    relayChorusDepthAttachment.reset();
+    relayLoopHpfAttachment.reset();
+    relayLoopLpfAttachment.reset();
+    relayOttAmountAttachment.reset();
+    relayOttTimeAttachment.reset();
+
+    relayEnableAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        apvts, pfx + "ENABLE", relayEnableButton);
+    relayTimeModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        apvts, pfx + "TIME_MODE", relayTimeModeCB);
+    relaySyncDivAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        apvts, pfx + "TIME_SYNC_DIV", relaySyncDivCB);
+
+    relayTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "TIME_MS", relayTimeSlider);
+    relayFeedbackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "FEEDBACK", relayFeedbackSlider);
+    relayInputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "INPUT_GAIN", relayInputGainSlider);
+    relayMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "MIX", relayMixSlider);
+    relayDiffusionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "DIFFUSION_TIME", relayDiffusionSlider);
+    relayDampingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "DAMPING", relayDampingSlider);
+    relayFlutterRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "FLUTTER_RATE", relayFlutterRateSlider);
+    relayFlutterDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "FLUTTER_DEPTH", relayFlutterDepthSlider);
+    relayChorusRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "CHORUS_RATE", relayChorusRateSlider);
+    relayChorusDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "CHORUS_DEPTH", relayChorusDepthSlider);
+    relayLoopHpfAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "LOOP_HPF", relayLoopHpfSlider);
+    relayLoopLpfAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "LOOP_LPF", relayLoopLpfSlider);
+    relayOttAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "OTT_AMOUNT", relayOttAmountSlider);
+    relayOttTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        apvts, pfx + "OTT_TIME", relayOttTimeSlider);
+}
+
 void PluginEditor::paint (juce::Graphics& g)
 {
     using namespace juce;
@@ -283,6 +424,8 @@ void PluginEditor::paint (juce::Graphics& g)
     hairlineInNextGap (Layout::topKnobsH);
     hairlineInNextGap (Layout::spectrumH);
     hairlineInNextGap (Layout::bandBarH);
+    hairlineInNextGap (Layout::gateH);
+    hairlineInNextGap (Layout::relayH);
 }
 
 void PluginEditor::resized()
@@ -340,7 +483,9 @@ void PluginEditor::resized()
         auto fftBlock = bandRow.removeFromRight (lab + comboFixed);
         fftSizeLabel.setBounds (fftBlock.removeFromLeft (lab));
         fftSizeCB.setBounds (fftBlock.reduced (0, 6));
-        latencyLabel.setBounds (bandRow.reduced (6, 8));
+        auto metricStrip = bandRow.reduced (6, 6);
+        relayRoundTripLabel.setBounds (metricStrip.removeFromBottom (18));
+        latencyLabel.setBounds (metricStrip);
     }
 
     area.removeFromTop (Layout::gap);
@@ -360,6 +505,59 @@ void PluginEditor::resized()
     soloButton.setBounds (gateRow.removeFromLeft (soloW).withSizeKeepingCentre (soloW, 24));
     gateRow.removeFromLeft (Layout::gap);
     muteButton.setBounds (gateRow.removeFromLeft (muteW).withSizeKeepingCentre (muteW, 24));
+
+    area.removeFromTop (Layout::gap);
+
+    {
+        auto relayBulk = area.removeFromTop (Layout::relayH);
+        auto rr1 = relayBulk.removeFromTop (Layout::relayRowH).reduced (6, 2);
+
+        relayEnableButton.setBounds (rr1.removeFromLeft (64).withSizeKeepingCentre (64, 28));
+        rr1.removeFromLeft (6);
+
+        relayClearButton.setBounds (rr1.removeFromLeft (82).withSizeKeepingCentre (82, 28));
+        rr1.removeFromLeft (8);
+
+        {
+            auto c = rr1.removeFromLeft (128);
+            relayTimeModeLabel.setBounds (c.removeFromLeft (54));
+            relayTimeModeCB.setBounds (c.reduced (0, 26));
+        }
+        rr1.removeFromLeft (4);
+
+        const int fbTarget = rr1.getWidth() / 5;
+        const int knobWRow1 = juce::jmax (66, fbTarget);
+
+        relayTimeSlider.setBounds (rr1.removeFromLeft (knobWRow1).reduced (4, 2));
+
+        {
+            auto c = rr1.removeFromLeft (154);
+            relaySyncDivLabel.setBounds (c.removeFromLeft (46));
+            relaySyncDivCB.setBounds (c.reduced (0, 26));
+        }
+        rr1.removeFromLeft (4);
+
+        const int rk = juce::jmax (64, rr1.getWidth() / 3);
+        relayFeedbackSlider.setBounds (rr1.removeFromLeft (rk).reduced (4, 2));
+        relayMixSlider.setBounds (rr1.removeFromLeft (rk).reduced (4, 2));
+        relayDiffusionSlider.setBounds (rr1.reduced (4, 2));
+
+        relayBulk.removeFromTop (Layout::gap);
+        auto rr2 = relayBulk.reduced (6, 4);
+        constexpr int nk = 11;
+        const int kw = juce::jmax (60, rr2.getWidth() / nk);
+
+        relayInputGainSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayDampingSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayFlutterRateSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayFlutterDepthSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayChorusRateSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayChorusDepthSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayLoopHpfSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayLoopLpfSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayOttAmountSlider.setBounds (rr2.removeFromLeft (kw).reduced (2, 0));
+        relayOttTimeSlider.setBounds (rr2.reduced (2, 0));
+    }
 
 #if !BANDGATE_NO_MOONBASE && INCLUDE_MOONBASE_UI
     if (activationUI)
@@ -426,4 +624,25 @@ void PluginEditor::updateLatencyLabel()
     latencyLabel.setText ("Latency: " + juce::String (latencySamples) + " smp / "
                               + juce::String (latencyMs, 2) + " ms",
                           juce::dontSendNotification);
+}
+
+void PluginEditor::updateRelayRoundTripLabel()
+{
+    const int band = juce::jlimit (
+        0, PluginProcessor::kMaxBands - 1,
+        static_cast<int> (*apvts.getRawParameterValue ("ACTIVE_BAND")));
+    const juce::String relayEnId = "BAND" + juce::String (band) + "_RELAY_ENABLE";
+
+    if (auto* en = apvts.getRawParameterValue (relayEnId))
+    {
+        if (*en <= 0.5f)
+        {
+            relayRoundTripLabel.setText ("Relay RT: -- (off)", juce::dontSendNotification);
+            return;
+        }
+    }
+
+    const float ms = processorRef.getEstimatedRelayRoundTripMs();
+    relayRoundTripLabel.setText ("Relay RT: " + juce::String (ms, 1) + " ms",
+                                juce::dontSendNotification);
 }

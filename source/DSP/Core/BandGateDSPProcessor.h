@@ -1,12 +1,14 @@
 #pragma once
 
 #include <array>
+#include <type_traits>
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
 #include "MultiBandLinkwitzRileySplitter.h"
+#include "RelayDelayCore.h"
 #include "SpectralGate.h"
 #include "../Utils/DSPUtils.h"
 #include "../Utils/ParameterSmoother.h"
@@ -80,6 +82,33 @@ namespace DSP {
                 currentFFTOrder = fftOrder;
                 lastActiveNumBands = activeNumBands;
                 configureDryDelayCompensation();
+
+                for (auto& r : relayBands)
+                    r.prepare (spec);
+            }
+
+            void clearRelayFeedback()
+            {
+                for (auto& r : relayBands)
+                    r.reset();
+            }
+
+            void updateRelayParameters (const std::array<RelayRuntimeParams, kMaxBands>& perBand) noexcept
+            {
+                for (size_t b = 0; b < relayBands.size(); ++b)
+                    relayBands[b].setTargets (perBand[b]);
+            }
+
+            float getRelayRoundTripMsEstimate() const noexcept
+            {
+                const int nb = juce::jmax (1, activeNumBands);
+
+                float s = 0.f;
+
+                for (int b = 0; b < activeNumBands; ++b)
+                    s += relayBands[(size_t) b].getEstimatedRoundTripMs();
+
+                return s / float (nb);
             }
 
             void updateParameters (SampleType inputGainDb, SampleType outputGainDb,
@@ -97,6 +126,9 @@ namespace DSP {
                     for (int ch = 0; ch < 2; ++ch)
                         for (int b = 0; b < kMaxBands; ++b)
                             spectralGate[(size_t) ch][(size_t) b].reset();
+
+                    for (auto& r : relayBands)
+                        r.reset();
                 }
 
                 inputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (inputGainDb));
@@ -154,7 +186,11 @@ namespace DSP {
 
                 dryBuffer.makeCopyOf (buffer);
 
-                std::array<SampleType, kMaxBands> bandSamps {};
+                std::array<SampleType, kMaxBands> bandSampsL {};
+                std::array<SampleType, kMaxBands> bandSampsR {};
+
+                auto* wl = buffer.getNumChannels() >= 1 ? buffer.getWritePointer (0) : nullptr;
+                auto* wr = buffer.getNumChannels() >= 2 ? buffer.getWritePointer (1) : nullptr;
 
                 for (int i = 0; i < numSamples; ++i)
                 {
@@ -163,35 +199,82 @@ namespace DSP {
                     const auto mix = mixSmoother.getNextValue();
                     const auto outputGain = outputGainSmoother.getNextValue();
                     const auto effectiveInputGain = inputGain * parallelGain;
-                    const auto effectiveOutputGain = outputGain / juce::jmax (parallelGain, SampleType { 1.0e-6 });
+                    const auto effectiveOutputGain = outputGain / juce::jmax (parallelGain, SampleType { 1.0e-6f });
 
                     const int nCh = juce::jmin (buffer.getNumChannels(), 2);
+
+                    splitter.processSample (0,
+                                           wl[i] * effectiveInputGain,
+                                           bandSampsL.data(),
+                                           activeNumBands);
+
+                    splitter.processSample (1,
+                                           (nCh > 1 && wr != nullptr) ? wr[i] * effectiveInputGain
+                                                                        : wl[i] * effectiveInputGain,
+                                           bandSampsR.data(),
+                                           activeNumBands);
+
+                    bool anySoloActive = false;
+
+                    for (int b = 0; b < activeNumBands; ++b)
+                        anySoloActive = anySoloActive || soloByBand[(size_t) b];
+
+                    float accLf = 0.f;
+                    float accRf = 0.f;
+
+                    for (int b = 0; b < activeNumBands; ++b)
+                    {
+                        const bool audible =
+                            (! anySoloActive || soloByBand[(size_t) b]) && ! muteByBand[(size_t) b];
+
+                        const float gatedL =
+                            spectralGate[0][(size_t) b].processSample (static_cast<float> (bandSampsL[(size_t) b]));
+                        float gatedR = gatedL;
+
+                        if (nCh > 1 && wr != nullptr)
+                            gatedR = spectralGate[1][(size_t) b]
+                                         .processSample (static_cast<float> (bandSampsR[(size_t) b]));
+
+                        if constexpr (std::is_same_v<SampleType, float>)
+                        {
+                            float obL {}, obR {};
+
+                            relayBands[(size_t) b].processStereoSample (gatedL,
+                                                                        gatedR,
+                                                                        obL,
+                                                                        obR);
+
+                            if (audible)
+                            {
+                                accLf += obL;
+                                accRf += obR;
+                            }
+                        }
+                        else
+                        {
+                            if (audible)
+                            {
+                                accLf += static_cast<float> (gatedL);
+                                accRf += static_cast<float> (gatedR);
+                            }
+                        }
+                    }
+
+                    SampleType relayL { static_cast<SampleType> (accLf) };
+                    SampleType relayR { static_cast<SampleType> (accRf) };
+
                     for (int channel = 0; channel < nCh; ++channel)
                     {
-                        auto* channelData = buffer.getWritePointer (channel);
-                        auto sample = channelData[i] * static_cast<float> (effectiveInputGain);
+                        auto* channelData = channel == 0 ? wl : wr;
+                        jassert (channelData != nullptr);
+                        const auto wetMixed = channel == 0 ? relayL : relayR;
 
-                        splitter.processSample (channel, static_cast<SampleType> (sample),
-                                                bandSamps.data(), activeNumBands);
-
-                        SampleType wetSum { 0.0 };
-                        bool anySoloActive = false;
-                        for (int b = 0; b < activeNumBands; ++b)
-                            anySoloActive = anySoloActive || soloByBand[(size_t) b];
-
-                        for (int b = 0; b < activeNumBands; ++b)
-                        {
-                            const bool bandAudible = (! anySoloActive || soloByBand[(size_t) b]) && ! muteByBand[(size_t) b];
-                            const auto bandSample = static_cast<SampleType> (
-                                spectralGate[(size_t) channel][(size_t) b].processSample (static_cast<float> (bandSamps[(size_t) b])));
-                            wetSum += bandAudible ? bandSample : SampleType { 0 };
-                        }
-
-                        auto drySample = dryBuffer.getSample (channel, i);
+                        const auto drySample = dryBuffer.getSample (channel, i);
                         const auto dryAligned = pushDryDelayAndGet (channel, static_cast<SampleType> (drySample));
+
                         channelData[i] = static_cast<SampleType> (
                             (static_cast<float> (dryAligned) * (1.0f - static_cast<float> (mix))
-                             + static_cast<float> (wetSum) * static_cast<float> (mix))
+                             + static_cast<float> (wetMixed) * static_cast<float> (mix))
                             * static_cast<float> (effectiveOutputGain));
                     }
                 }
@@ -206,6 +289,9 @@ namespace DSP {
                 for (int ch = 0; ch < 2; ++ch)
                     for (int b = 0; b < kMaxBands; ++b)
                         spectralGate[(size_t) ch][(size_t) b].reset();
+
+                for (auto& r : relayBands)
+                    r.reset();
 
                 inputGainSmoother.reset (Utils::DSPUtils::dbToGain (inputGain));
                 inputGainSmoother.setTargetValue (Utils::DSPUtils::dbToGain (inputGain));
@@ -391,6 +477,7 @@ namespace DSP {
             }
 
             MultiBandLinkwitzRileySplitter<SampleType> splitter;
+            std::array<RelayDelayCore, kMaxBands> relayBands {};
             std::array<std::array<SpectralGate, kMaxBands>, 2> spectralGate {};
 
             Utils::ParameterSmoother<SampleType> inputGainSmoother;

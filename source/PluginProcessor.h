@@ -60,6 +60,9 @@ public:
                                   int& fftSizeOut,
                                   double& sampleRateOut) const;
 
+    /** UI / metering: synced delay (+ diffusion bump) averaged over active relays. */
+    float getEstimatedRelayRoundTripMs() const;
+
     static constexpr int kMaxBands = 6;
 
     juce::AudioProcessorValueTreeState apvts;
@@ -119,6 +122,109 @@ public:
                 juce::ParameterID { pfx + "SOLO", 1 }, pfx + "Solo", false));
             params.push_back (std::make_unique<juce::AudioParameterBool> (
                 juce::ParameterID { pfx + "MUTE", 1 }, pfx + "Mute", false));
+
+            const juce::String bandStr = juce::String (b + 1);
+            const juce::String rfx = pfx + "RELAY_";
+
+            params.push_back (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { rfx + "ENABLE", 2 },
+                juce::String ("Band ") + bandStr + " Relay Enable",
+                false));
+
+            params.push_back (std::make_unique<juce::AudioParameterChoice> (
+                juce::ParameterID { rfx + "TIME_MODE", 2 },
+                juce::String ("Band ") + bandStr + " Relay Time Mode",
+                juce::StringArray { "Free", "Sync" }, 0));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "TIME_MS", 2 },
+                juce::String ("Band ") + bandStr + " Relay Time",
+                juce::NormalisableRange<float> { 1.0f, 8000.0f, 0.0f, 0.35f }, 400.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("ms")));
+
+            params.push_back (std::make_unique<juce::AudioParameterChoice> (
+                juce::ParameterID { rfx + "TIME_SYNC_DIV", 2 },
+                juce::String ("Band ") + bandStr + " Relay Sync",
+                juce::StringArray { "1/32", "1/16", "1/8", "1/8 dot", "1/4 tri", "1/4", "1/4 dot", "1/2 tri",
+                                    "1/2", "1/2 dot", "1 bar", "2 bar", "4 bar" },
+                5)); // ~1/4
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "FEEDBACK", 2 },
+                juce::String ("Band ") + bandStr + " Relay Feedback",
+                juce::NormalisableRange<float> { 0.0f, 1.55f }, 0.45f));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "INPUT_GAIN", 2 },
+                juce::String ("Band ") + bandStr + " Relay Input",
+                juce::NormalisableRange<float> { -36.0f, 36.0f, 0.1f }, 0.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("dB")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "MIX", 2 },
+                juce::String ("Band ") + bandStr + " Relay Mix",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 50.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "DIFFUSION_TIME", 2 },
+                juce::String ("Band ") + bandStr + " Relay Diffusion Time",
+                juce::NormalisableRange<float> { 1.0f, 750.0f, 0.0f, 0.42f }, 45.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("ms")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "DAMPING", 2 },
+                juce::String ("Band ") + bandStr + " Relay Damping",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 35.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "FLUTTER_RATE", 2 },
+                juce::String ("Band ") + bandStr + " Relay Flutter Rate",
+                juce::NormalisableRange<float> { 0.05f, 24.0f, 0.0f, 0.52f }, 1.75f,
+                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "FLUTTER_DEPTH", 2 },
+                juce::String ("Band ") + bandStr + " Relay Flutter Depth",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 15.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "CHORUS_RATE", 2 },
+                juce::String ("Band ") + bandStr + " Relay Chorus Rate",
+                juce::NormalisableRange<float> { 0.02f, 14.0f, 0.0f, 0.5f }, 0.62f,
+                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "CHORUS_DEPTH", 2 },
+                juce::String ("Band ") + bandStr + " Relay Chorus Depth",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 18.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "LOOP_HPF", 2 },
+                juce::String ("Band ") + bandStr + " Relay Loop HPF",
+                juce::NormalisableRange<float> { 20.0f, 4000.0f, 0.1f, 0.43f }, 95.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "LOOP_LPF", 2 },
+                juce::String ("Band ") + bandStr + " Relay Loop LPF",
+                juce::NormalisableRange<float> { 500.0f, 21000.0f, 0.01f, 0.42f }, 12500.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "OTT_AMOUNT", 2 },
+                juce::String ("Band ") + bandStr + " Relay OTT Amount",
+                juce::NormalisableRange<float> { 0.0f, 100.0f, 0.1f }, 40.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { rfx + "OTT_TIME", 2 },
+                juce::String ("Band ") + bandStr + " Relay OTT Time",
+                juce::NormalisableRange<float> { 1.0f, 900.0f, 0.1f }, 135.0f,
+                juce::AudioParameterFloatAttributes().withLabel ("ms")));
         }
 
         params.push_back(std::make_unique<juce::AudioParameterChoice>(
@@ -130,6 +236,10 @@ public:
         params.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{"FFT_SIZE", 1}, "FFT Size",
             juce::StringArray{"256", "512", "1024", "2048", "4096", "16384", "32768"}, 3));
+
+        // Global: clears relay feedback tails on every band simultaneously.
+        params.push_back (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { "RELAY_CLEAR", 2 }, "Relay Clear", false));
 
         return { params.begin(), params.end() };
     }
@@ -149,6 +259,7 @@ private:
     std::unique_ptr<Service::PresetManager> presetManager;
 
     DSP::FloatProcessor dspProcessor;
+    bool lastRelayClearHigh = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

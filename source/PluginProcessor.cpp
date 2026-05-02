@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include "DSP/Core/RelayDelayCore.h"
+
 #include <array>
 
 namespace
@@ -38,6 +40,70 @@ namespace
         for (int i = 0; i < nx; ++i)
             xover[(size_t) i] = juce::jlimit (40.f, maxHz,
                                              apvts.getRawParameterValue ("CROSSOVER_" + juce::String (i))->load());
+    }
+
+    void fillRelayRuntimeParamsPerBand (juce::AudioProcessor& processor,
+                                        juce::AudioProcessorValueTreeState& apvts,
+                                        std::array<DSP::Core::RelayRuntimeParams, PluginProcessor::kMaxBands>& out)
+    {
+        double hostBpm = 120.0;
+        bool hostBpmValid = false;
+
+        if (auto* ph = processor.getPlayHead())
+        {
+            if (auto pos = ph->getPosition(); pos.hasValue())
+            {
+                const auto& posInfo = *pos;
+                if (auto bpmOpt = posInfo.getBpm(); bpmOpt.hasValue())
+                {
+                    const double b = *bpmOpt;
+                    if (b > 1.0e-6)
+                    {
+                        hostBpm = b;
+                        hostBpmValid = true;
+                    }
+                }
+            }
+        }
+
+        for (int band = 0; band < PluginProcessor::kMaxBands; ++band)
+        {
+            const juce::String pfx = "BAND" + juce::String (band) + "_RELAY_";
+
+            DSP::Core::RelayRuntimeParams r {};
+
+            auto v = [&] (const char* id) -> float
+            {
+                const juce::String key = pfx + id;
+                auto* pv = apvts.getRawParameterValue (key);
+                jassert (pv != nullptr);
+                return pv != nullptr ? pv->load() : 0.f;
+            };
+
+            r.enabled = v ("ENABLE") > 0.5f;
+            r.timeMode = static_cast<int> (v ("TIME_MODE"));
+            r.timeMs = v ("TIME_MS");
+            r.syncDivIndex = static_cast<int> (v ("TIME_SYNC_DIV"));
+            r.feedback = v ("FEEDBACK");
+            r.inputGainDb = v ("INPUT_GAIN");
+            r.mixPercent = v ("MIX");
+            r.diffusionMs = v ("DIFFUSION_TIME");
+            r.dampingPct = v ("DAMPING");
+            r.loopHpfHz = v ("LOOP_HPF");
+            r.loopLpfHz = v ("LOOP_LPF");
+
+            r.ottAmountPct = v ("OTT_AMOUNT");
+            r.ottTimeMs = v ("OTT_TIME");
+            r.flutterRateHz = v ("FLUTTER_RATE");
+            r.flutterDepthPct = v ("FLUTTER_DEPTH");
+            r.chorusRateHz = v ("CHORUS_RATE");
+            r.chorusDepthPct = v ("CHORUS_DEPTH");
+
+            r.hostBpm = hostBpm;
+            r.hostBpmValid = hostBpmValid;
+
+            out[(size_t) band] = r;
+        }
     }
 } // namespace
 
@@ -206,6 +272,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     dspProcessor.updateParameters (inputGain, outputGain, parallelGain, mix, fftOrder, numBands,
                                    thr.data(), red.data(), sm.data(), flip.data(), solo.data(), mute.data(), xover.data());
 
+    std::array<DSP::Core::RelayRuntimeParams, PluginProcessor::kMaxBands> relays {};
+    fillRelayRuntimeParamsPerBand (*this, apvts, relays);
+    dspProcessor.updateRelayParameters (relays);
+
+    if (auto* clearPv = apvts.getRawParameterValue ("RELAY_CLEAR"))
+    {
+        const bool high = clearPv->load() > 0.5f;
+        if (high && ! lastRelayClearHigh)
+            dspProcessor.clearRelayFeedback();
+        lastRelayClearHigh = high;
+    }
+
     // Update latency if FFT size changed
     setLatencySamples(dspProcessor.getLatencySamples());
 
@@ -239,6 +317,11 @@ void PluginProcessor::fetchSpectralVisualData (std::vector<float>& magDbOut,
                                                 double& sampleRateOut) const
 {
     dspProcessor.fetchSpectralVisualData (magDbOut, gainOut, fftSizeOut, sampleRateOut);
+}
+
+float PluginProcessor::getEstimatedRelayRoundTripMs() const
+{
+    return dspProcessor.getRelayRoundTripMsEstimate();
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
