@@ -67,6 +67,7 @@ function(bandgate_setup_moonbase)
     # MSVC C1014 (include depth 1024): even a TU that only pulls BinaryIncludes.cpp -> MoonbaseBinary1.cpp
     # can hit the limit. Do not compile BinaryIncludes.cpp on MSVC; compile each MoonbaseBinary*.cpp as its
     # own translation unit (same symbols, shallow #include stack). Upstream moonbase sources stay unedited.
+
     if(MSVC)
         set(_mb_strip "    #include \"Assets/BinaryIncludes.cpp\"")
         file(READ "${MB_DEST_DIR}/moonbase_JUCEClient.cpp" _mb_client_src)
@@ -105,5 +106,25 @@ function(bandgate_setup_moonbase)
     # Moonbase module dependencies
     target_link_libraries(${MB_TARGET} PRIVATE
         juce_product_unlocking)
+
+    # Also expose moonbase sources and linking to SharedCode so all consumers (plugin, standalone, tests, benchmarks) link correctly.
+    if(TARGET SharedCode)
+        if(MSVC)
+            target_sources(SharedCode INTERFACE
+                ${MB_ASSET_CPPS}
+                "${MB_DEST_DIR}/moonbase_JUCEClient_MSVC.cpp")
+        else()
+            target_sources(SharedCode INTERFACE "${MB_DEST_DIR}/moonbase_JUCEClient.cpp")
+        endif()
+
+        target_include_directories(SharedCode BEFORE INTERFACE "${MB_DEST_DIR}")
+        target_include_directories(SharedCode BEFORE INTERFACE "${MB_INCLUDE_ROOT}")
+
+        target_compile_definitions(SharedCode INTERFACE
+            JUCE_MODULE_AVAILABLE_moonbase_JUCEClient=1
+            INCLUDE_MOONBASE_UI=1)
+
+        target_link_libraries(SharedCode INTERFACE juce_product_unlocking)
+    endif()
 
 endfunction()
