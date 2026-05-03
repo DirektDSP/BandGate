@@ -253,7 +253,8 @@ jobs:
           mkdir -p artifacts
           base="build/BandGate_artefacts/${{ needs.changes.outputs.build_type }}"
           if [ -d "${base}/VST3" ]; then cp -r "${base}/VST3/"*.vst3 artifacts/ 2>/dev/null || true; fi
-          if [ -d "${base}/CLAP" ]; then cp "${base}/CLAP/"*.clap artifacts/ 2>/dev/null || true; fi
+          # macOS .clap is a bundle (directory); plain cp fails and || true hid missing CLAP in artifacts
+          if [ -d "${base}/CLAP" ]; then cp -R "${base}/CLAP/"*.clap artifacts/ 2>/dev/null || true; fi
           if [ -d "${base}/AU" ]; then cp -r "${base}/AU/"*.component artifacts/ 2>/dev/null || true; fi
           if [ -d "${base}/Standalone" ]; then cp -r "${base}/Standalone/"*.app artifacts/ 2>/dev/null || true; fi
           ls -laR artifacts/
