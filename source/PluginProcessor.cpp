@@ -326,6 +326,11 @@ float PluginProcessor::getEstimatedRelayRoundTripMs() const
     return dspProcessor.getRelayRoundTripMsEstimate();
 }
 
+float PluginProcessor::getEstimatedRelayRoundTripMsForBand (int bandIndex) const
+{
+    return dspProcessor.getRelayRoundTripMsForBand (bandIndex);
+}
+
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));

@@ -63,6 +63,9 @@ public:
     /** UI / metering: synced delay (+ diffusion bump) averaged over active relays. */
     float getEstimatedRelayRoundTripMs() const;
 
+    /** UI: round-trip for one band (matches active band editor). */
+    float getEstimatedRelayRoundTripMsForBand (int bandIndex) const;
+
     static constexpr int kMaxBands = 6;
 
     juce::AudioProcessorValueTreeState apvts;

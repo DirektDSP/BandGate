@@ -103,7 +103,7 @@ int RelayDelayCore::computeFilterFingerprint (const RelayRuntimeParams& p) const
     const int dpi = (int) std::lround ((double) p.dampingPct);
     const int hpi = juce::jlimit (16, (int) (sampleRate * 0.459), (int) std::lround ((double) p.loopHpfHz));
     const int lpi =
-        juce::jlimit (300, (int) (sampleRate * 0.489), (int) std::lround ((double) (p.loopLpfHz * 0.025f)));
+        juce::jlimit (300, (int) (sampleRate * 0.489), (int) std::lround ((double) p.loopLpfHz));
 
     return dpi ^ (hpi * 734187) ^ (lpi * 219413);
 }

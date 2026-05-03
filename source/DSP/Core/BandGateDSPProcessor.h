@@ -111,6 +111,13 @@ namespace DSP {
                 return s / float (nb);
             }
 
+            /** Per-band RT (delay + diffusion smear) for UI; independent of active band count. */
+            float getRelayRoundTripMsForBand (int bandIndex) const noexcept
+            {
+                const int b = juce::jlimit (0, kMaxBands - 1, bandIndex);
+                return relayBands[(size_t) b].getEstimatedRoundTripMs();
+            }
+
             void updateParameters (SampleType inputGainDb, SampleType outputGainDb,
                                    SampleType parallelGainDb,
                                    SampleType mixPercent, int fftOrder, int numBands,

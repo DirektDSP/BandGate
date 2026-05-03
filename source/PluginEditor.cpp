@@ -742,7 +742,7 @@ void PluginEditor::updateRelayRoundTripLabel()
         }
     }
 
-    const float ms = processorRef.getEstimatedRelayRoundTripMs();
+    const float ms = processorRef.getEstimatedRelayRoundTripMsForBand (band);
     relayRoundTripLabel.setText ("Relay RT: " + juce::String (ms, 1) + " ms",
                                 juce::dontSendNotification);
 }
