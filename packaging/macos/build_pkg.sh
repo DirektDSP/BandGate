@@ -19,6 +19,33 @@ mkdir -p "$PKGS" "$RES" "$OUTDIR"
 cp -f "$SCRIPT_DIR/../resources/EULA" "$RES/EULA"
 cp -f "$SCRIPT_DIR/../resources/README" "$RES/README"
 
+# download-artifact often nests: <dest>/<artifact-name>/*.clap (not <dest>/*.clap)
+resolve_bundle_dir() {
+  local root="${1:?}"
+  shopt -s nullglob
+  local hits=( "$root"/*.vst3 )
+  if [[ ${#hits[@]} -ge 1 ]]; then
+    printf '%s' "$root"
+    return
+  fi
+  local sub
+  for sub in "$root"/*/; do
+    [[ -d "$sub" ]] || continue
+    hits=( "${sub}"*.vst3 )
+    if [[ ${#hits[@]} -ge 1 ]]; then
+      printf '%s' "${sub%/}"
+      return
+    fi
+  done
+  printf '%s' "$root"
+}
+
+resolved="$(resolve_bundle_dir "$ARTIFACTS_DIR")"
+if [[ "$resolved" != "$ARTIFACTS_DIR" ]]; then
+  echo "Resolved plugin bundles under: $resolved"
+fi
+ARTIFACTS_DIR="$resolved"
+
 shopt -s nullglob
 vst3s=( "$ARTIFACTS_DIR"/*.vst3 )
 aus=( "$ARTIFACTS_DIR"/*.component )
