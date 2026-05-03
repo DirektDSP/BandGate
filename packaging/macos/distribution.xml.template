@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>@PRODUCT_NAME@ @VERSION@</title>
+    <allowed-os-versions>
+        <os-version min="10.13" />
+    </allowed-os-versions>
+    <license file="EULA" mime-type="text/plain" />
+    <readme file="README" mime-type="text/plain" />
+    <options customize="always" rootVolumeOnly="true" hostArchitectures="x86_64,arm64" require-scripts="false" />
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true" />
+
+    <choices-outline>
+        <line choice="vst3" />
+        <line choice="au" />
+        <line choice="clap" />
+        <line choice="standalone" />
+    </choices-outline>
+
+    <choice id="vst3" visible="true" start_selected="true" title="@PRODUCT_NAME@ VST3"
+        description="VST3 plug-in (system Library, all users).">
+        <pkg-ref id="@BUNDLE_ID@.vst3" />
+    </choice>
+
+    <choice id="au" visible="true" start_selected="true" title="@PRODUCT_NAME@ AU"
+        description="Audio Unit component (system Library, all users).">
+        <pkg-ref id="@BUNDLE_ID@.au" />
+    </choice>
+
+    <choice id="clap" visible="true" start_selected="true" title="@PRODUCT_NAME@ CLAP"
+        description="CLAP plug-in (system Library, all users).">
+        <pkg-ref id="@BUNDLE_ID@.clap" />
+    </choice>
+
+    <choice id="standalone" visible="true" start_selected="true" title="@PRODUCT_NAME@ Standalone"
+        description="Standalone application in /Applications.">
+        <pkg-ref id="@BUNDLE_ID@.app" />
+    </choice>
+
+    <pkg-ref id="@BUNDLE_ID@.vst3" version="@VERSION@" onConclusion="None">@PRODUCT_NAME@.vst3.pkg</pkg-ref>
+    <pkg-ref id="@BUNDLE_ID@.au" version="@VERSION@" onConclusion="None">@PRODUCT_NAME@.au.pkg</pkg-ref>
+    <pkg-ref id="@BUNDLE_ID@.clap" version="@VERSION@" onConclusion="None">@PRODUCT_NAME@.clap.pkg</pkg-ref>
+    <pkg-ref id="@BUNDLE_ID@.app" version="@VERSION@" onConclusion="None">@PRODUCT_NAME@.app.pkg</pkg-ref>
+</installer-gui-script>

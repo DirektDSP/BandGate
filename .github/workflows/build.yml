@@ -322,11 +322,64 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
+  # macOS flat installer (.pkg) — pkgbuild + productbuild (Installer.app UX)
+  # ---------------------------------------------------------------------------
+  installer-macos:
+    name: macOS Installer
+    needs: [changes, build-mac]
+    if: |
+      needs.changes.outputs.skip != 'true' &&
+      needs.changes.outputs.run_mac == 'true'
+    runs-on: macos-14
+    steps:
+      - name: Checkout (packaging scripts)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packaging
+            VERSION
+
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "BandGate-macOS-*"
+          path: artifacts/macos
+          merge-multiple: true
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="$(cat VERSION)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS .pkg
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACTS_DIR: ${{ github.workspace }}/artifacts/macos
+          OUTDIR: ${{ github.workspace }}/artifacts
+          MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+        run: packaging/macos/build_pkg.sh
+
+      - name: Upload macOS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BandGate-macOS-Installer-${{ github.sha }}
+          path: artifacts/DirektDSP-BandGate-*-macOS.pkg
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
   # Moonbase release upload — runs on pushes with moonbase enabled
   # ---------------------------------------------------------------------------
   moonbase-release:
     name: Moonbase Release
-    needs: [changes, build-linux, build-windows, build-mac, installer-windows]
+    needs: [changes, build-linux, build-windows, build-mac, installer-windows, installer-macos]
     if: |
       needs.changes.outputs.skip != 'true' &&
       needs.changes.outputs.no_moonbase != 'true' &&
