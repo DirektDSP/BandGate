@@ -117,15 +117,19 @@ sed -e "s/@VERSION@/${VERSION}/g" \
   "$DIST_SRC" >"$DIST_OUT"
 
 OUT_PKG="$OUTDIR/DirektDSP-BandGate-${VERSION}-macOS.pkg"
-SIGN_ARGS=()
+# Do not use "${SIGN_ARGS[@]}" when empty: set -u + bash 4.4+ treats it as unbound.
 if [[ -n "${MACOS_INSTALLER_SIGN_IDENTITY:-}" ]]; then
-  SIGN_ARGS=(--sign "$MACOS_INSTALLER_SIGN_IDENTITY")
+  productbuild --sign "$MACOS_INSTALLER_SIGN_IDENTITY" \
+    --distribution "$DIST_OUT" \
+    --package-path "$PKGS" \
+    --resources "$RES" \
+    "$OUT_PKG"
+else
+  productbuild \
+    --distribution "$DIST_OUT" \
+    --package-path "$PKGS" \
+    --resources "$RES" \
+    "$OUT_PKG"
 fi
-
-productbuild "${SIGN_ARGS[@]}" \
-  --distribution "$DIST_OUT" \
-  --package-path "$PKGS" \
-  --resources "$RES" \
-  "$OUT_PKG"
 
 echo "Built $OUT_PKG"
